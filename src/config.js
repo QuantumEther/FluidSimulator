@@ -1,4 +1,5 @@
 const MAX_PART = 8000;
+const MAX_GRID_CELLS = 4096;
 const STRIDE = 12;
 const ACCUM = 'rgba16float';
 const BASE_H = 24.0;
@@ -11,6 +12,8 @@ const S = {
   blobRadius: 20, densityThreshold: 0.4, normalStrength: 80,
   specular: 1.0, fresnel: 0.5, subsurface: 0.6,
   colorMix: 0.5,
+  neighborMode: 0,
+  debugView: 0,
   randomColor: true, customColor: [0.13, 0.83, 0.93],
 };
 
@@ -49,4 +52,4 @@ function randomVibrant() {
   return [f(h+1/3), f(h), f(h-1/3)];
 }
 
-export { MAX_PART, STRIDE, ACCUM, BASE_H, S, SLIDERS, randomVibrant };
+export { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, BASE_H, S, SLIDERS, randomVibrant };

@@ -83,6 +83,13 @@ function buildUI() {
 }
 buildUI();
 
+const neighborMode = $('neighborMode');
+neighborMode.value = String(S.neighborMode);
+neighborMode.addEventListener('change', () => { S.neighborMode = Number(neighborMode.value); });
+const debugView = $('debugView');
+debugView.value = String(S.debugView);
+debugView.addEventListener('change', () => { S.debugView = Number(debugView.value); });
+
 /* Buttons & colour */
 $('randBtn').onclick = () => { S.randomColor = true;
   $('randBtn').className = 'px-3 py-2 rounded-xl text-xs font-medium border border-indigo-500/50 bg-indigo-500/25 text-indigo-200'; };
