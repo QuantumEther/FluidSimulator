@@ -96,7 +96,7 @@ fn computeDensity(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn computeLambdas(@builtin(global_invocation_id) gid: vec3<u32>) {
   let i=gid.x; if(i>=params.count){return;}
   let pi=particles[i].pos; let rho0=params.restDensity;
-  let C=max(particles[i].density/rho0-1.0,0.0);
+  let C=particles[i].density/rho0-1.0;
   var gradSum=vec2<f32>(0.0); var gradSq=0.0;
   if(params.neighborMode==0u){
     for(var j=0u;j<params.count;j=j+1u){ if(j!=i){let rij=pi-particles[j].pos;let r2=dot(rij,rij);if(r2<params.h2){
