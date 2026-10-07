@@ -1,5 +1,6 @@
   body { font-family:'Inter',system-ui,sans-serif; background:#060911; color:#f3f4f6;
          user-select:none; overflow:hidden; margin:0; }
+  .startup-error[hidden] { display:none; }
   canvas { display:block; touch-action:none; }
   .glass { background:rgba(15,23,42,.84); backdrop-filter:blur(18px);
            -webkit-backdrop-filter:blur(18px); border:1px solid rgba(255,255,255,.09);
