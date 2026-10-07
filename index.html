@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGPU Fluid Lab — Realism Upgrade</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./styles/app.css">
+</head>
+<body class="w-screen h-screen relative flex items-center justify-center">
+
+<div class="relative flex items-center justify-center w-full h-full p-4 sm:p-6">
+  <div id="canvasWrap" class="relative glass rounded-3xl overflow-hidden border-2 border-indigo-500/40 shadow-2xl shadow-indigo-500/10">
+    <canvas id="simCanvas"></canvas>
+  </div>
+</div>
+
+<div class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-4 pointer-events-auto flex-wrap">
+    <div class="glass rounded-2xl p-3 sm:p-4">
+      <h1 class="text-sm sm:text-base font-bold text-white">GPU Fluid Lab</h1>
+      <p id="backendText" class="text-[11px] text-emerald-400 font-medium">WebGPU · Compute SPH · Realism</p>
+    </div>
+    <div class="glass rounded-2xl px-4 py-3 flex items-center gap-3 text-xs font-mono">
+      <div><div class="text-slate-400 text-[10px] uppercase">FPS</div>
+           <div id="fpsVal" class="text-indigo-400 font-bold">60</div></div>
+      <div class="h-6 w-px bg-white/10"></div>
+      <div><div class="text-slate-400 text-[10px] uppercase">Particles</div>
+           <div id="countVal" class="text-pink-400 font-bold">0</div></div>
+      <div class="h-6 w-px bg-white/10"></div>
+      <div><div class="text-slate-400 text-[10px] uppercase">ms</div>
+           <div id="msVal" class="text-amber-400 font-bold">0.0</div></div>
+    </div>
+  </div>
+
+  <div class="self-end max-w-xs w-full pointer-events-auto">
+    <div class="glass rounded-2xl p-4 sm:p-5 space-y-3 max-h-[calc(100vh-8rem)] overflow-y-auto scroll-thin">
+      <div class="flex justify-between items-center pb-2 border-b border-white/10">
+        <h2 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Tuning</h2>
+        <div class="flex gap-2">
+          <button id="resetBtn" class="text-[10px] text-rose-400 font-semibold uppercase">Clear</button>
+          <button id="fillBtn" class="text-[10px] text-emerald-400 font-semibold uppercase">Fill</button>
+        </div>
+      </div>
+
+      <button id="spawnBtn" class="w-full py-2 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-xs font-bold text-white">+ Spawn Batch</button>
+
+      <details open>
+        <summary class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider py-1">
+          <span class="chev">▸</span> Resolution & Time
+        </summary>
+        <div class="space-y-2.5 pt-1" id="group-time"></div>
+      </details>
+
+      <details open>
+        <summary class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider py-1">
+          <span class="chev">▸</span> Fluid Physics
+        </summary>
+        <div class="space-y-2.5 pt-1" id="group-physics"></div>
+      </details>
+
+      <details>
+        <summary class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider py-1">
+          <span class="chev">▸</span> Boundaries
+        </summary>
+        <div class="space-y-2.5 pt-1" id="group-boundary"></div>
+      </details>
+
+      <details open>
+        <summary class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider py-1">
+          <span class="chev">▸</span> Rendering
+        </summary>
+        <div class="space-y-2.5 pt-1" id="group-render"></div>
+      </details>
+
+      <details open>
+        <summary class="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300 uppercase tracking-wider py-1">
+          <span class="chev">▸</span> Color
+        </summary>
+        <div class="pt-1">
+          <div id="group-color" class="space-y-2.5"></div>
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <button id="randBtn" class="px-3 py-2 rounded-xl text-xs font-medium border border-indigo-500/50 bg-indigo-500/25 text-indigo-200">Random</button>
+            <div class="relative">
+              <input id="colorPick" type="color" value="#22d3ee" class="opacity-0 absolute inset-0 w-full h-full cursor-pointer z-10">
+              <div class="py-2 px-3 rounded-xl border border-white/10 bg-slate-800 text-xs text-slate-300 text-center">Custom</div>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="text-[10px] text-slate-400/90 leading-relaxed bg-slate-900/60 p-2 rounded-lg">
+        💡 Click / drag to pour. Higher budget = finer detail.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
