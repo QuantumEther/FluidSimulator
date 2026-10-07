@@ -1,4 +1,4 @@
-// Fluid shader set: si-units-foundation-v1
+// Fluid shader set: si-units-v1
 
 struct Particle {
   pos          : vec2<f32>,
@@ -6,8 +6,11 @@ struct Particle {
   color        : vec4<f32>,
   density      : f32,
   pressure     : f32,
+  massPerDepth : f32,
   neighborCount: u32,
-  _pad         : u32,
+  lambda        : f32,
+  surfaceLaplacian: f32,
+  _pad         : vec2<f32>,
 };
 
 struct Params {
@@ -16,13 +19,12 @@ struct Params {
   h             : f32,
   h2            : f32,
   restDensity   : f32,
-  stiffness     : f32,
+  bulkModulus   : f32,
   viscosity     : f32,
   surfaceTension: f32,
-  damping       : f32,
-  colorMix      : f32,
-  bounce        : f32,
-  wallFriction  : f32,
+  diffusivity   : f32,
+  restitution   : f32,
+  wallRetention : f32,
   dt            : f32,
   time          : f32,
   canvasW       : f32,
@@ -81,10 +83,10 @@ fn particleColor(i : u32) -> vec3<f32> {
   switch params.debugView {
     case 1u: { return heat(p.density / max(params.restDensity * 2.0, 0.1)); }
     case 2u: {
-      let signedPressure = clamp(0.5 + p.pressure / max(params.stiffness * params.restDensity, 1.0), 0.0, 1.0);
+      let signedPressure = clamp(p.pressure / max(params.bulkModulus, 1.0), 0.0, 1.0);
       return heat(signedPressure);
     }
-    case 3u: { return heat(length(p.vel) / 900.0); }
+    case 3u: { return heat(length(p.vel) / 10.0); }
     case 4u: {
       let id = f32(i);
       return 0.5 + 0.5 * sin(vec3<f32>(id * 0.017, id * 0.031 + 2.1, id * 0.047 + 4.2));

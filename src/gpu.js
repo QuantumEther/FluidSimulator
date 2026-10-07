@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM } from './config.js';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js';
 
-const SHADER_SET_VERSION = 'si-units-foundation-v1';
+const SHADER_SET_VERSION = 'si-units-v1';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
@@ -138,6 +138,9 @@ const pipeClearGrid = device.createComputePipeline({ layout: physPL, compute: { 
 const pipeBuildGrid = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'buildGrid' } });
 const pipeDensity   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeDensity' } });
 const pipeColors    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'diffuseColors' } });
+const pipeLambdas   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeLambdas' } });
+const pipeCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeCorrections' } });
+const pipeApplyCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'applyCorrections' } });
 const pipeForces    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeForces'  } });
 const pipeIntegrate = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'integrate'     } });
 const pipeSavePrevious = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'savePreviousPositions' } });
@@ -199,7 +202,7 @@ const linearSamp = device.createSampler({
 
 /* ---------- accum target ---------- */
 let accumTex = null, accumView = null, compBG = null;
-let canvasW = 600, canvasH = 600, dpr = 1;
+let canvasW = WORLD_WIDTH, canvasH = WORLD_HEIGHT, dpr = 1;
 
 function makeAccum(w, h) {
   if (accumTex) accumTex.destroy();
@@ -230,7 +233,7 @@ function resize() {
   const pw = Math.round(side * dpr), ph = Math.round(side * dpr);
   canvas.width = pw; canvas.height = ph;
   canvas.style.width = side + 'px'; canvas.style.height = side + 'px';
-  canvasW = side; canvasH = side;
+  canvasW = WORLD_WIDTH; canvasH = WORLD_HEIGHT;
   makeAccum(pw, ph);
 }
 window.addEventListener('resize', resize);
@@ -239,7 +242,8 @@ resize();
 return {
   device, ctx, particleBuf, paramsBuf, renderBuf, colorBuffers, physBGs,
   previousPositionsBuf, gpuTimer,
-  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeForces, pipeIntegrate, pipeSavePrevious,
+  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeLambdas, pipeCorrections, pipeApplyCorrections,
+  pipeForces, pipeIntegrate, pipeSavePrevious,
   splatPipe, splatBGs, compPipe,
   get compBG() { return compBG; },
   get accumView() { return accumView; },
