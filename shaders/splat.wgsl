@@ -1,3 +1,5 @@
+// Fluid shader set: si-units-foundation-v1
+
 struct Particle {
   pos          : vec2<f32>,
   vel          : vec2<f32>,
@@ -38,6 +40,24 @@ struct Params {
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;
 @group(0) @binding(1) var<uniform> params : Params;
 @group(0) @binding(2) var<storage, read> colors : array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> previousPositions : array<vec2<f32>>;
+
+struct RenderParams {
+  resolution    : vec2<f32>,
+  texel         : vec2<f32>,
+  normalStrength: f32,
+  threshold     : f32,
+  specular      : f32,
+  fresnel       : f32,
+  subsurface    : f32,
+  time          : f32,
+  debugView     : f32,
+  gridSpacing   : f32,
+  interpolationAlpha: f32,
+  _p1 : f32, _p2 : f32, _p3 : f32, _p4 : f32,
+  _p5 : f32, _p6 : f32, _p7 : f32,
+};
+@group(0) @binding(4) var<uniform> renderParams : RenderParams;
 
 struct VSOut {
   @builtin(position) pos : vec4<f32>,
@@ -87,7 +107,8 @@ fn vs(@builtin(vertex_index) vi : u32, @builtin(instance_index) ii : u32) -> VSO
     vec2<f32>(-1.0, 1.0), vec2<f32>(1.0,-1.0), vec2<f32>(1.0,1.0)
   );
   let corner = q[vi];
-  let worldPx = particles[ii].pos + corner * params.splatRadius;
+  let center = mix(previousPositions[ii], particles[ii].pos, clamp(renderParams.interpolationAlpha, 0.0, 1.0));
+  let worldPx = center + corner * params.splatRadius;
   let ndc = vec2<f32>(
     worldPx.x / params.canvasW * 2.0 - 1.0,
     1.0 - worldPx.y / params.canvasH * 2.0

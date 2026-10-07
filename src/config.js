@@ -1,8 +1,21 @@
+import { createRandom } from './random.mjs';
+
 const MAX_PART = 50000;
 const MAX_GRID_CELLS = 4096;
 const STRIDE = 12;
 const ACCUM = 'rgba16float';
 const BASE_H = 24.0;
+
+const requestedSeed = Number.parseInt(new URLSearchParams(location.search).get('seed') || '', 10);
+const SIM_SEED = Number.isFinite(requestedSeed) && requestedSeed >= 0
+  ? requestedSeed >>> 0
+  : (() => {
+      const value = new Uint32Array(1);
+      if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(value);
+      else value[0] = Date.now() >>> 0;
+      return value[0] || 1;
+    })();
+const random01 = createRandom(SIM_SEED);
 
 const S = {
   budget: 8000, timeScale: 1.0, substeps: 4,
@@ -40,7 +53,7 @@ const SLIDERS = [
 ];
 
 function randomVibrant() {
-  const h = Math.random(), s = 0.88, l = 0.55;
+  const h = random01(), s = 0.88, l = 0.55;
   const q = l < 0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
   const f = t => {
     if (t<0) t+=1; if (t>1) t-=1;
@@ -52,4 +65,4 @@ function randomVibrant() {
   return [f(h+1/3), f(h), f(h-1/3)];
 }
 
-export { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, BASE_H, S, SLIDERS, randomVibrant };
+export { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, BASE_H, S, SLIDERS, SIM_SEED, random01, randomVibrant };

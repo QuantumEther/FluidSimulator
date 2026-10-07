@@ -1,4 +1,4 @@
-import { MAX_PART, SLIDERS, randomVibrant } from './config.js';
+import { MAX_PART, SLIDERS, random01, randomVibrant } from './config.js';
 
 export function setupInput({ canvas, getCanvasSize, spawn, S }) {
 let down = false, lastSpawn = [0,0], lastPtr = [-1,-1];
@@ -165,16 +165,16 @@ $('fillBtn').onclick = () => {
   let remaining = need;
   const clusters = 4;
   for (let c = 0; c < clusters && remaining > 0; c++) {
-    const x = 80 + Math.random() * Math.max(1, getCanvasSize().width - 160);
-    const y = 60 + Math.random() * Math.max(1, getCanvasSize().height * 0.3);
+    const x = 80 + random01() * Math.max(1, getCanvasSize().width - 160);
+    const y = 60 + random01() * Math.max(1, getCanvasSize().height * 0.3);
     const chunk = Math.min(remaining, Math.ceil(need / clusters));
     spawn(x, y, chunk, pick());
     remaining -= chunk;
   }
 };
 $('spawnBtn').onclick = () => {
-  const x = 80 + Math.random() * Math.max(1, getCanvasSize().width - 160);
-  const y = 60 + Math.random() * Math.max(1, getCanvasSize().height * 0.3);
+  const x = 80 + random01() * Math.max(1, getCanvasSize().width - 160);
+  const y = 60 + random01() * Math.max(1, getCanvasSize().height * 0.3);
   spawn(x, y, 80, pick());
 };
 
