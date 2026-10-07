@@ -19,7 +19,7 @@ export const randomVibrant = () => {
 export const S = {
   budget: 8000, timeScale: 1, substeps: 4, solverIterations: 3,
   gravity: 9.81, restDensity: 1000, spacing: 0.002,
-  viscosity: 0.001, surfaceTension: 0.072, diffusivity: 0.0000005,
+  viscosity: 0.001, surfaceTension: 0.072, diffusivity: 1e-9,
   sliceDepth: SLICE_DEPTH, restitution: 0.02, wallRetention: 0.99,
   splatRadius: 0.006, densityThreshold: 0.55, normalStrength: 150,
   specular: 1.4, fresnel: 0.6, subsurface: 0.65,
@@ -37,7 +37,7 @@ export const SLIDERS = [
   {g:'physics', k:'spacing', l:'Particle spacing', min:0.002, max:0.006, step:0.0001, fmt:n=>`${fmt(n*1000,1)} mm`},
   {g:'physics', k:'viscosity', l:'Dynamic viscosity', min:0.0001, max:10, step:0.0001, scale:'log', fmt:n=>`${Number(n)<0.01?Number(n).toExponential(1):fmt(n,3)} Pa·s`},
   {g:'physics', k:'surfaceTension', l:'Surface tension', min:0, max:0.12, step:0.001, fmt:n=>`${fmt(n,3)} N/m`},
-  {g:'color', k:'diffusivity', l:'Dye diffusivity', min:0, max:0.00001, step:0.0000001, fmt:n=>`${Number(n).toExponential(1)} m²/s`},
+  {g:'color', k:'diffusivity', l:'Dye diffusivity', min:0, max:1e-7, step:1e-9, fmt:n=>`${Number(n).toExponential(1)} m²/s`},
   {g:'boundary', k:'restitution', l:'Wall restitution', min:0, max:1, step:0.01, fmt:n=>fmt(n,2)},
   {g:'boundary', k:'wallRetention', l:'Tangential velocity retention', min:0.5, max:1, step:0.01, fmt:n=>fmt(n,2)},
   {g:'render', k:'splatRadius', l:'Particle render radius', min:0.003, max:0.012, step:0.0002, fmt:n=>`${fmt(n*1000,1)} mm`},
