@@ -17,12 +17,12 @@ export const randomVibrant = () => {
 };
 
 export const S = {
-  budget: 8000, timeScale: 1, substeps: 4, solverIterations: 2,
+  budget: 8000, timeScale: 1, substeps: 4, solverIterations: 3,
   gravity: 9.81, restDensity: 1000, spacing: 0.002,
-  viscosity: 0.001, surfaceTension: 0.072, diffusivity: 0.000001,
-  sliceDepth: SLICE_DEPTH, restitution: 0.0, wallRetention: 0.95,
-  splatRadius: 0.006, densityThreshold: 0.75, normalStrength: 300,
-  specular: 2.8, fresnel: 0.5, subsurface: 0.35,
+  viscosity: 0.001, surfaceTension: 0.072, diffusivity: 0.0000005,
+  sliceDepth: SLICE_DEPTH, restitution: 0.02, wallRetention: 0.99,
+  splatRadius: 0.006, densityThreshold: 0.55, normalStrength: 150,
+  specular: 1.4, fresnel: 0.6, subsurface: 0.65,
   neighborMode: 1, debugView: 0, randomColor: true, customColor: [0.13, 0.83, 0.92],
 };
 
