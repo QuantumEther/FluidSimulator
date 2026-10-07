@@ -1,21 +1,24 @@
-const MAX_PART = 8000;
+const MAX_PART = 50000;
+const MAX_GRID_CELLS = 4096;
 const STRIDE = 12;
 const ACCUM = 'rgba16float';
 const BASE_H = 24.0;
 
 const S = {
-  budget: 2000, timeScale: 1.0, substeps: 2,
-  gravity: 900, viscosity: 0.4, surfaceTension: 0.3,
-  stiffness: 1200, restDensity: 5, hScale: 1.0, damping: 0.998,
+  budget: 8000, timeScale: 1.0, substeps: 4,
+  gravity: 900, viscosity: 1.16, surfaceTension: 0.94,
+  stiffness: 100, restDensity: 2.0, hScale: 0.5, damping: 1.0,
   bounce: 0.2, wallFriction: 0.85,
-  blobRadius: 20, densityThreshold: 0.4, normalStrength: 80,
-  specular: 1.0, fresnel: 0.5, subsurface: 0.6,
-  colorMix: 0.5,
+  blobRadius: 8, densityThreshold: 0.75, normalStrength: 300,
+  specular: 2.8, fresnel: 0.5, subsurface: 0.35,
+  colorMix: 0.05,
+  neighborMode: 1,
+  debugView: 0,
   randomColor: true, customColor: [0.13, 0.83, 0.93],
 };
 
 const SLIDERS = [
-  { g:'time',    k:'budget',          l:'Particle Budget',      min: 500, max: 8000, step: 500,  fmt: v => v },
+  { g:'time',    k:'budget',          l:'Particle Budget',      min: 500, max: 50000, step: 500, fmt: v => v.toLocaleString() },
   { g:'time',    k:'timeScale',       l:'Time Scale',           min: 0.1, max: 2,    step: 0.05, fmt: v => v.toFixed(2) + '×' },
   { g:'time',    k:'substeps',        l:'Substeps',             min: 1,   max: 4,    step: 1,    fmt: v => v },
   { g:'physics', k:'gravity',         l:'Gravity',              min: 0,   max: 2500, step: 25,   fmt: v => v.toFixed(0) },
@@ -49,4 +52,4 @@ function randomVibrant() {
   return [f(h+1/3), f(h), f(h-1/3)];
 }
 
-export { MAX_PART, STRIDE, ACCUM, BASE_H, S, SLIDERS, randomVibrant };
+export { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, BASE_H, S, SLIDERS, randomVibrant };

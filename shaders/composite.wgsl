@@ -8,6 +8,8 @@ struct RenderParams {
   fresnel       : f32,
   subsurface    : f32,
   time          : f32,
+  debugView     : f32,
+  gridSpacing   : f32,
   _p0 : f32, _p1 : f32, _p2 : f32, _p3 : f32,
   _p4 : f32, _p5 : f32, _p6 : f32, _p7 : f32,
 };
@@ -52,10 +54,26 @@ fn fs(in : VSOut) -> @location(0) vec4<f32> {
   let den   = s.r;
   let bgc   = bg(uv);
   let alpha = smoothstep(P.threshold, P.threshold + 0.30, den);
+  let diagnosticAlpha = smoothstep(0.02, 0.12, den);
 
-  if (alpha < 0.003) { return vec4<f32>(bgc, 1.0); }
+  if (P.debugView > 4.5 && P.debugView < 5.5) {
+    let spacing = max(P.gridSpacing, 1.0);
+    let pixel = uv * P.resolution;
+    let cell = fract(pixel / spacing);
+    let edge = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
+    let line = 1.0 - smoothstep(0.025, 0.085, edge);
+    let fluid = s.gba / max(den, 1e-5);
+    let cells = mix(bgc, vec3<f32>(0.10, 0.42, 0.72), line * 0.88);
+    return vec4<f32>(mix(cells, fluid, diagnosticAlpha), 1.0);
+  }
 
   let col = s.gba / max(den, 1e-5);
+
+  if (P.debugView > 0.5) {
+    return vec4<f32>(mix(bgc, col, diagnosticAlpha), 1.0);
+  }
+
+  if (alpha < 0.003) { return vec4<f32>(bgc, 1.0); }
 
   let gx = (r - l) * P.normalStrength;
   let gy = (u - dn) * P.normalStrength;
