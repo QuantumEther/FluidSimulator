@@ -1,4 +1,4 @@
-// Fluid shader set: si-units-v3
+// Fluid shader set: si-units-v4
 
 struct Particle {
   pos          : vec2<f32>,

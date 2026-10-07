@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v3';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v4';
 
-const SHADER_SET_VERSION = 'si-units-v3';
+const SHADER_SET_VERSION = 'si-units-v4';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
@@ -91,10 +91,12 @@ const splatMod = device.createShaderModule({ code: SPLAT_SHADER, label: 'splat' 
 const compMod  = device.createShaderModule({ code: COMP_SHADER,  label: 'comp'  });
 
 for (const [n, m] of [['phys',physMod],['splat',splatMod],['comp',compMod]]) {
-  m.getCompilationInfo?.().then(info => {
-    for (const msg of info.messages) if (msg.type === 'error')
-      console.error(`[${n}] ${msg.lineNum}:${msg.linePos} ${msg.message}`);
-  });
+  const info = await m.getCompilationInfo?.();
+  const errors = info?.messages.filter(msg => msg.type === 'error') ?? [];
+  if (errors.length) {
+    const details = errors.map(msg => `${msg.lineNum}:${msg.linePos} ${msg.message}`).join('\n');
+    throw new Error(`${n} WGSL compilation failed:\n${details}`);
+  }
 }
 
 /* ---------- buffers ---------- */
