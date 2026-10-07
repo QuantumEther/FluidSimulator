@@ -174,6 +174,7 @@ function frame(now) {
       }
       cp.setPipeline(gpu.pipeDensity); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg);
       cp.setPipeline(gpu.pipeColors); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg);
+      cp.end();
       colorIndex = 1 - colorIndex;
       cp = enc.beginComputePass();
       cp.setPipeline(gpu.pipeForces);    cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg); cp.end();
