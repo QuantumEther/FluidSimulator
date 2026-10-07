@@ -6,8 +6,15 @@ if (!navigator.gpu) {
   $('backendText').textContent = 'NO WEBGPU'; $('backendText').style.color = '#f43f5e';
   throw new Error('WebGPU not supported');
 }
-const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-if (!adapter) { $('backendText').textContent = 'NO ADAPTER'; throw new Error('no adapter'); }
+// Some browsers expose only a default or low-power adapter. Try the preferred
+// adapter first, then let the browser choose before treating WebGPU as absent.
+let adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+if (!adapter) adapter = await navigator.gpu.requestAdapter();
+if (!adapter) {
+  $('backendText').textContent = 'GPU UNAVAILABLE';
+  $('backendText').style.color = '#f43f5e';
+  throw new Error('This browser did not provide a WebGPU adapter.');
+}
 const device  = await adapter.requestDevice();
 device.addEventListener('uncapturederror', (e) =>
   console.error('WebGPU:', e.error?.message || e.error));

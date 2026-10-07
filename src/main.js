@@ -10,7 +10,23 @@ const canvas = document.getElementById('simCanvas');
 const wrap   = document.getElementById('canvasWrap');
 const $      = (id) => document.getElementById(id);
 
-const gpu = await createGpuRuntime({ canvas, wrap, $ });
+let gpu;
+try {
+  gpu = await createGpuRuntime({ canvas, wrap, $ });
+} catch (error) {
+  const notice = $('startupError');
+  if (notice) {
+    const message = !navigator.gpu
+      ? 'WebGPU is unavailable in this browser. Try a current browser with hardware acceleration enabled.'
+      : error.message.includes('adapter')
+        ? 'The browser could not access a GPU adapter. Enable hardware acceleration, then reload the page.'
+        : `The simulator could not start: ${error.message}`;
+    $('startupErrorText').textContent = message;
+    notice.hidden = false;
+  }
+  console.error('Fluid Lab startup failed:', error);
+  throw error;
+}
 
 /* ============================================================================
    Particle staging
