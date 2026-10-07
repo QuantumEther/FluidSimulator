@@ -77,6 +77,7 @@ function buildUI() {
     inp.addEventListener('input', (e) => {
       S[sl.k] = parseFloat(e.target.value);
       $('val-' + sl.k).textContent = sl.fmt(S[sl.k]);
+      $('presetSelect').value = 'custom';
       if (sl.k === 'budget') trimToBudget();
     });
   }
@@ -85,10 +86,69 @@ buildUI();
 
 const neighborMode = $('neighborMode');
 neighborMode.value = String(S.neighborMode);
-neighborMode.addEventListener('change', () => { S.neighborMode = Number(neighborMode.value); });
 const debugView = $('debugView');
 debugView.value = String(S.debugView);
-debugView.addEventListener('change', () => { S.debugView = Number(debugView.value); });
+const presetSelect = $('presetSelect');
+function updateModeStatus() {
+  $('modeStatus').textContent = `Search: ${neighborMode.selectedOptions[0].textContent} · View: ${debugView.selectedOptions[0].textContent}`;
+}
+neighborMode.addEventListener('change', () => {
+  S.neighborMode = Number(neighborMode.value);
+  presetSelect.value = 'custom';
+  updateModeStatus();
+});
+debugView.addEventListener('change', () => {
+  S.debugView = Number(debugView.value);
+  presetSelect.value = 'custom';
+  updateModeStatus();
+});
+
+const presets = {
+  screenshot: {
+    budget:8000, timeScale:1, substeps:4, gravity:900, viscosity:1.16,
+    surfaceTension:0.94, stiffness:100, restDensity:2, hScale:0.5, damping:1,
+    bounce:0.2, wallFriction:0.85, blobRadius:8, densityThreshold:0.75, normalStrength:300, specular:2.8,
+    fresnel:0.5, subsurface:0.35, colorMix:0.05, neighborMode:1, debugView:0,
+  },
+  water: {
+    budget:8000, timeScale:1, substeps:3, gravity:900, viscosity:0.55,
+    surfaceTension:0.35, stiffness:800, restDensity:4, hScale:0.9, damping:0.998,
+    bounce:0.2, wallFriction:0.92, blobRadius:18, densityThreshold:0.45,
+    normalStrength:100, specular:1.2, fresnel:0.5, subsurface:0.65, colorMix:0.25,
+    neighborMode:1, debugView:0,
+  },
+  honey: {
+    budget:8000, timeScale:1, substeps:3, gravity:900, viscosity:2.4,
+    surfaceTension:0.45, stiffness:300, restDensity:3, hScale:0.75, damping:0.999,
+    bounce:0.1, wallFriction:0.97, blobRadius:20, densityThreshold:0.55,
+    normalStrength:120, specular:1.2, fresnel:0.4, subsurface:1, colorMix:0.15,
+    neighborMode:1, debugView:0,
+  },
+  lowGravity: {
+    budget:8000, timeScale:1, substeps:3, gravity:150, viscosity:0.35,
+    surfaceTension:0.2, stiffness:500, restDensity:2.5, hScale:0.7, damping:0.998,
+    bounce:0.6, wallFriction:0.95, blobRadius:15, densityThreshold:0.5,
+    normalStrength:120, specular:1.2, fresnel:0.5, subsurface:0.7, colorMix:0.2,
+    neighborMode:1, debugView:0,
+  },
+};
+presetSelect.value = 'screenshot';
+updateModeStatus();
+presetSelect.addEventListener('change', () => {
+  const preset = presets[presetSelect.value];
+  if (!preset) return;
+  Object.assign(S, preset);
+  for (const sl of SLIDERS) {
+    const input = $('sl-' + sl.k);
+    if (!input) continue;
+    input.value = S[sl.k];
+    $('val-' + sl.k).textContent = sl.fmt(S[sl.k]);
+  }
+  neighborMode.value = String(S.neighborMode);
+  debugView.value = String(S.debugView);
+  updateModeStatus();
+  trimToBudget();
+});
 
 /* Buttons & colour */
 $('randBtn').onclick = () => { S.randomColor = true;

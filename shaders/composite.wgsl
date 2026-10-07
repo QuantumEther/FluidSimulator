@@ -54,25 +54,26 @@ fn fs(in : VSOut) -> @location(0) vec4<f32> {
   let den   = s.r;
   let bgc   = bg(uv);
   let alpha = smoothstep(P.threshold, P.threshold + 0.30, den);
+  let diagnosticAlpha = smoothstep(0.02, 0.12, den);
 
   if (P.debugView > 4.5 && P.debugView < 5.5) {
     let spacing = max(P.gridSpacing, 1.0);
     let pixel = uv * P.resolution;
     let cell = fract(pixel / spacing);
     let edge = min(min(cell.x, 1.0 - cell.x), min(cell.y, 1.0 - cell.y));
-    let line = 1.0 - smoothstep(0.012, 0.045, edge);
+    let line = 1.0 - smoothstep(0.025, 0.085, edge);
     let fluid = s.gba / max(den, 1e-5);
-    let cells = mix(bgc, vec3<f32>(0.08, 0.28, 0.48), line * 0.72);
-    return vec4<f32>(mix(cells, fluid, alpha), 1.0);
+    let cells = mix(bgc, vec3<f32>(0.10, 0.42, 0.72), line * 0.88);
+    return vec4<f32>(mix(cells, fluid, diagnosticAlpha), 1.0);
   }
-
-  if (alpha < 0.003) { return vec4<f32>(bgc, 1.0); }
 
   let col = s.gba / max(den, 1e-5);
 
   if (P.debugView > 0.5) {
-    return vec4<f32>(mix(bgc, col, alpha), 1.0);
+    return vec4<f32>(mix(bgc, col, diagnosticAlpha), 1.0);
   }
+
+  if (alpha < 0.003) { return vec4<f32>(bgc, 1.0); }
 
   let gx = (r - l) * P.normalStrength;
   let gy = (u - dn) * P.normalStrength;

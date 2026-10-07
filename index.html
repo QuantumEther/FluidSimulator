@@ -47,6 +47,15 @@
       <button id="spawnBtn" class="w-full py-2 rounded-xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-xs font-bold text-white">+ Spawn Batch</button>
 
       <div class="grid grid-cols-1 gap-2">
+        <label class="text-[10px] text-slate-400 uppercase tracking-wide">Preset
+          <select id="presetSelect" class="mt-1 w-full rounded-lg bg-slate-900 border border-white/10 p-2 text-xs text-slate-200">
+            <option value="screenshot">My screenshot settings</option>
+            <option value="water">Water</option>
+            <option value="honey">Thick fluid</option>
+            <option value="lowGravity">Low gravity</option>
+            <option value="custom" disabled>Custom settings</option>
+          </select>
+        </label>
         <label class="text-[10px] text-slate-400 uppercase tracking-wide">Neighbor search
           <select id="neighborMode" class="mt-1 w-full rounded-lg bg-slate-900 border border-white/10 p-2 text-xs text-slate-200">
             <option value="0">All pairs (reference)</option>
@@ -64,6 +73,8 @@
             <option value="6">Neighbor count</option>
           </select>
         </label>
+        <div id="modeStatus" class="text-[10px] text-slate-500 leading-relaxed">Search: Spatial grid · View: Fluid appearance</div>
+        <div class="text-[10px] text-slate-500 leading-relaxed">At high particle counts, use Spatial grid; All pairs is a slow reference mode.</div>
       </div>
 
       <details open>
