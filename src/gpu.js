@@ -1,5 +1,7 @@
 import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM } from './config.js';
 
+const SHADER_SET_VERSION = 'si-units-foundation-v1';
+
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
 if (!navigator.gpu) {
@@ -65,6 +67,12 @@ const [PHYS_SHADER, SPLAT_SHADER, COMP_SHADER] = await Promise.all([
   fetch(new URL('../shaders/splat.wgsl', import.meta.url)).then(r => r.text()),
   fetch(new URL('../shaders/composite.wgsl', import.meta.url)).then(r => r.text()),
 ]);
+
+for (const [name, source] of [['simulation', PHYS_SHADER], ['splat', SPLAT_SHADER], ['composite', COMP_SHADER]]) {
+  if (!source.includes(`// Fluid shader set: ${SHADER_SET_VERSION}`)) {
+    throw new Error(`The ${name} shader does not match this app build. Reload the SI foundation branch preview so its JavaScript and shader files are served together.`);
+  }
+}
 
 /* ============================================================================
    Modules + pipelines

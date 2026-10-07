@@ -1,3 +1,5 @@
+// Fluid shader set: si-units-foundation-v1
+
 struct Particle {
   pos          : vec2<f32>,
   vel          : vec2<f32>,
