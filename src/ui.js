@@ -1,4 +1,4 @@
-import { MAX_PART, SLIDERS, random01, randomVibrant } from './config.js';
+import { MAX_PART, SLIDERS, random01, randomVibrant } from './config.js?v=si-units-v2';
 
 export function setupInput({ canvas, getCanvasSize, spawn, S }) {
 let down = false, lastSpawn = [0,0], lastPtr = [-1,-1];

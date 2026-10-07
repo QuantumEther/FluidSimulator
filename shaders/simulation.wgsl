@@ -1,4 +1,4 @@
-// Fluid shader set: si-units-v1
+// Fluid shader set: si-units-v2
 // Planar SPH kernel with per-depth particle mass (kg/m), returning volumetric density (kg/m³).
 
 struct Particle {

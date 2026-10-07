@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v2';
 
-const SHADER_SET_VERSION = 'si-units-v1';
+const SHADER_SET_VERSION = 'si-units-v2';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
@@ -62,15 +62,24 @@ ctx.configure({ device, format: PRESENT, alphaMode: 'opaque' });
 /* ============================================================================
    WGSL
    ============================================================================ */
-const [PHYS_SHADER, SPLAT_SHADER, COMP_SHADER] = await Promise.all([
-  fetch(new URL('../shaders/simulation.wgsl', import.meta.url)).then(r => r.text()),
-  fetch(new URL('../shaders/splat.wgsl', import.meta.url)).then(r => r.text()),
-  fetch(new URL('../shaders/composite.wgsl', import.meta.url)).then(r => r.text()),
+async function fetchShader(path) {
+  const url = new URL(path, import.meta.url);
+  url.searchParams.set('build', SHADER_SET_VERSION);
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Could not load shader ${url.pathname} (HTTP ${response.status}).`);
+  return { source: await response.text(), url: url.href };
+}
+const shaderFiles = await Promise.all([
+  fetchShader('../shaders/simulation.wgsl'),
+  fetchShader('../shaders/splat.wgsl'),
+  fetchShader('../shaders/composite.wgsl'),
 ]);
+const [PHYS_SHADER, SPLAT_SHADER, COMP_SHADER] = shaderFiles.map(file => file.source);
 
-for (const [name, source] of [['simulation', PHYS_SHADER], ['splat', SPLAT_SHADER], ['composite', COMP_SHADER]]) {
+for (const [index, [name, source]] of [['simulation', PHYS_SHADER], ['splat', SPLAT_SHADER], ['composite', COMP_SHADER]].entries()) {
   if (!source.includes(`// Fluid shader set: ${SHADER_SET_VERSION}`)) {
-    throw new Error(`The ${name} shader does not match this app build. Reload the SI foundation branch preview so its JavaScript and shader files are served together.`);
+    const servedMarker = source.match(/\/\/ Fluid shader set:\s*[^\s]+/)?.[0] || '(no version marker)';
+    throw new Error(`${name} shader build mismatch: expected ${SHADER_SET_VERSION}, received ${servedMarker} from ${shaderFiles[index].url}. Reload the SI conversion preview after its latest files finish deploying.`);
   }
 }
 
