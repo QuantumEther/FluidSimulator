@@ -2,10 +2,11 @@
 /* ============================================================================
    WebGPU Fluid Lab — realism upgrade
    ============================================================================ */
-import { MAX_PART, STRIDE, BASE_H, S, SIM_SEED, random01, randomVibrant } from './config.js';
-import { createGpuRuntime } from './gpu.js';
-import { setupInput, setupControls } from './ui.js';
+import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v4';
+import { createGpuRuntime } from './gpu.js?v=si-units-v4';
+import { setupInput, setupControls } from './ui.js?v=si-units-v4';
 import { advanceFixedClock, FIXED_DT } from './fixed-step.mjs';
+import { particleMassKg, particleMassPerDepth } from './si-units.mjs';
 
 const canvas = document.getElementById('simCanvas');
 const wrap   = document.getElementById('canvasWrap');
@@ -41,7 +42,9 @@ function writeP(i, x, y, vx, vy, r, g, b) {
   const o = i * STRIDE;
   stage[o+0]=x; stage[o+1]=y; stage[o+2]=vx; stage[o+3]=vy;
   stage[o+4]=r; stage[o+5]=g; stage[o+6]=b; stage[o+7]=1;
-  stage[o+8]=0; stage[o+9]=0; stage[o+10]=0; stage[o+11]=0;
+  stage[o+8]=S.restDensity; stage[o+9]=0;
+  stage[o+10]=particleMassPerDepth(S.restDensity,S.spacing); stage[o+11]=1;
+  stage[o+12]=0; stage[o+13]=0; stage[o+14]=0; stage[o+15]=0;
   const c = i * 4;
   colorStage[c]=r; colorStage[c+1]=g; colorStage[c+2]=b; colorStage[c+3]=1;
   const p = i * 2;
@@ -61,20 +64,29 @@ function spawn(px, py, n, col) {
   if (live >= cap) return;
   n = Math.min(n, cap - live);
   const firstNew = live;
-  const R = Math.max(20, gpu.canvasW / 30);
+  const spacing = S.spacing;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
+  const rows = Math.ceil(n / cols);
+  const pad = spacing * 1.25;
   for (let k = 0; k < n; k++) {
-    const a = random01() * Math.PI * 2;
-    const r = Math.sqrt(random01()) * R;
-    const x = Math.max(15, Math.min(gpu.canvasW - 15, px + Math.cos(a) * r));
-    const y = Math.max(15, Math.min(gpu.canvasH - 15, py + Math.sin(a) * r));
+    const colIndex = k % cols, rowIndex = Math.floor(k / cols);
+    const x = Math.max(pad, Math.min(gpu.canvasW-pad, px + (colIndex-(cols-1)*0.5)*spacing + (random01()-0.5)*spacing*0.18));
+    const y = Math.max(pad, Math.min(gpu.canvasH-pad, py + (rowIndex-(rows-1)*0.5)*spacing + (random01()-0.5)*spacing*0.18));
     writeP(live + k, x, y,
-      (random01()-0.5) * 25,
-      random01() * 20 + 10,
+      (random01()-0.5) * 0.04,
+      random01() * 0.04,
       col[0], col[1], col[2]);
   }
   live += n;
   upload(firstNew);
   $('countVal').textContent = live.toLocaleString();
+}
+function refreshParticleMasses() {
+  const massPerDepth = particleMassPerDepth(S.restDensity,S.spacing);
+  for (let i=0;i<live;i++) stage[i*STRIDE+10]=massPerDepth;
+  upload(0);
+  const mass = particleMassKg(S.restDensity,S.spacing,S.sliceDepth);
+  $('particleMassVal').textContent = mass < 0.001 ? `${(mass*1e6).toFixed(0)} mg` : `${(mass*1000).toFixed(2)} g`;
 }
 function trimToBudget() {
   const cap = Math.min(S.budget, MAX_PART);
@@ -86,7 +98,9 @@ const input = setupInput({ canvas, getCanvasSize, spawn, S });
 setupControls({
   S, $, trimToBudget, getLive: () => live, setLive: value => { live = value; },
   upload, spawn, pick: () => S.randomColor ? randomVibrant() : S.customColor, getCanvasSize,
+  refreshParticleMasses,
 });
+refreshParticleMasses();
 
 /* ============================================================================
    Uniform writers
@@ -96,29 +110,28 @@ const pU = new Uint32Array(pF.buffer);
 const rF = new Float32Array(20);
 
 function writeParams(dt) {
-  const h = BASE_H * S.hScale;
+  const h = S.spacing * 2;
   pF[0]  = 0;
   pF[1]  = S.gravity;
   pF[2]  = h;
   pF[3]  = h * h;
   pF[4]  = S.restDensity;
-  pF[5]  = S.stiffness;
+  pF[5]  = 2.2e9;
   pF[6]  = S.viscosity;
   pF[7]  = S.surfaceTension;
-  pF[8]  = S.damping;
-  pF[9]  = S.colorMix;
-  pF[10] = S.bounce;
-  pF[11] = S.wallFriction;
-  pF[12] = dt;
-  pF[13] = performance.now() * 0.001;
-  pF[14] = gpu.canvasW;
-  pF[15] = gpu.canvasH;
-  pU[16] = live;
-  pU[17] = Math.ceil(gpu.canvasW / h);
-  pU[18] = Math.ceil(gpu.canvasH / h);
-  pU[19] = S.neighborMode;
-  pU[20] = S.debugView;
-  pF[21] = S.blobRadius;
+  pF[8]  = S.diffusivity;
+  pF[9]  = S.restitution;
+  pF[10] = S.wallRetention;
+  pF[11] = dt;
+  pF[12] = performance.now() * 0.001;
+  pF[13] = WORLD_WIDTH;
+  pF[14] = WORLD_HEIGHT;
+  pU[15] = live;
+  pU[16] = Math.ceil(WORLD_WIDTH / h);
+  pU[17] = Math.ceil(WORLD_HEIGHT / h);
+  pU[18] = S.neighborMode;
+  pU[19] = S.debugView;
+  pF[20] = S.splatRadius;
   gpu.device.queue.writeBuffer(gpu.paramsBuf, 0, pF);
 }
 
@@ -134,7 +147,7 @@ function writeRender(interpolationAlpha) {
   rF[8] = S.subsurface;
   rF[9] = performance.now() * 0.001;
   rF[10] = S.debugView;
-  rF[11] = BASE_H * S.hScale * canvas.width / gpu.canvasW;
+  rF[11] = S.spacing * canvas.width / WORLD_WIDTH;
   rF[12] = interpolationAlpha;
   gpu.device.queue.writeBuffer(gpu.renderBuf, 0, rF);
 }
@@ -199,8 +212,6 @@ function frame(now) {
   const schedule = advanceFixedClock(simClock, rawDt, S.timeScale);
   simHzTicks += schedule.ticks;
   const lastPtr = input.getLastPointer();
-  if (schedule.ticks > 0 && input.isDown() && live < Math.min(S.budget, MAX_PART) && lastPtr[0] >= 0)
-    spawn(lastPtr[0], lastPtr[1], 3 * schedule.ticks, input.getActiveColor());
 
   const substeps = Math.max(1, Math.round(S.substeps));
   const subDt = FIXED_DT / substeps;
@@ -223,20 +234,35 @@ function frame(now) {
       cp.dispatchWorkgroups(wg);
       cp.end();
 
-      for (let step = 0; step < substeps; step++) {
-        cp = enc.beginComputePass({ label: 'grid, density, and color' });
+      const buildGridAndDensity = (label) => {
         if (S.neighborMode === 1) {
-          cp.setPipeline(gpu.pipeClearGrid); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(Math.ceil(pU[17] * pU[18] / 64));
-          cp.setPipeline(gpu.pipeBuildGrid); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg);
+          let pass=enc.beginComputePass({label:`${label}: clear grid`});
+          pass.setPipeline(gpu.pipeClearGrid);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(Math.ceil(pU[16]*pU[17]/64));pass.end();
+          pass=enc.beginComputePass({label:`${label}: build grid`});
+          pass.setPipeline(gpu.pipeBuildGrid);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(wg);pass.end();
         }
-        cp.setPipeline(gpu.pipeDensity); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg);
-        cp.setPipeline(gpu.pipeColors); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg);
-        cp.end();
+        const pass=enc.beginComputePass({label:`${label}: density`});
+        pass.setPipeline(gpu.pipeDensity);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(wg);pass.end();
+      };
+      for (let step = 0; step < substeps; step++) {
+        buildGridAndDensity('pre-step');
+        cp=enc.beginComputePass({label:'physical forces'});
+        cp.setPipeline(gpu.pipeForces);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
+        cp=enc.beginComputePass({label:'predict particle motion'});
+        cp.setPipeline(gpu.pipeIntegrate);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
+        for (let iteration=0;iteration<S.solverIterations;iteration++) {
+          buildGridAndDensity(`constraint ${iteration+1}`);
+          cp=enc.beginComputePass({label:'PBF density multipliers'});
+          cp.setPipeline(gpu.pipeLambdas);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
+          cp=enc.beginComputePass({label:'PBF position corrections'});
+          cp.setPipeline(gpu.pipeCorrections);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
+          cp=enc.beginComputePass({label:'apply PBF corrections'});
+          cp.setPipeline(gpu.pipeApplyCorrections);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
+        }
+        buildGridAndDensity('post-constraint');
+        cp=enc.beginComputePass({label:'dye diffusion'});
+        cp.setPipeline(gpu.pipeColors);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
         colorIndex = 1 - colorIndex;
-        cp = enc.beginComputePass({ label: 'forces' });
-        cp.setPipeline(gpu.pipeForces); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg); cp.end();
-        cp = enc.beginComputePass({ label: 'integrate positions' });
-        cp.setPipeline(gpu.pipeIntegrate); cp.setBindGroup(0, gpu.physBGs[colorIndex]); cp.dispatchWorkgroups(wg); cp.end();
       }
     }
   }
@@ -299,8 +325,8 @@ function frame(now) {
 }
 
 /* ---------- seed & go ---------- */
-spawn(gpu.canvasW * 0.50,  80, 120, randomVibrant());
-spawn(gpu.canvasW * 0.30, 140, 100, randomVibrant());
-spawn(gpu.canvasW * 0.70, 140, 100, randomVibrant());
+spawn(gpu.canvasW * 0.50,  0.10, 120, randomVibrant());
+spawn(gpu.canvasW * 0.30, 0.16, 100, randomVibrant());
+spawn(gpu.canvasW * 0.70, 0.16, 100, randomVibrant());
 
 requestAnimationFrame((t) => { lastT = t; frame(t); });

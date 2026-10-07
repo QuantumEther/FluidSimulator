@@ -1,5 +1,5 @@
 
-// Fluid shader set: si-units-foundation-v1
+// Fluid shader set: si-units-v4
 
 struct RenderParams {
   resolution    : vec2<f32>,

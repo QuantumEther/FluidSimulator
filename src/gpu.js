@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM } from './config.js';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v4';
 
-const SHADER_SET_VERSION = 'si-units-foundation-v1';
+const SHADER_SET_VERSION = 'si-units-v4';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
@@ -62,15 +62,24 @@ ctx.configure({ device, format: PRESENT, alphaMode: 'opaque' });
 /* ============================================================================
    WGSL
    ============================================================================ */
-const [PHYS_SHADER, SPLAT_SHADER, COMP_SHADER] = await Promise.all([
-  fetch(new URL('../shaders/simulation.wgsl', import.meta.url)).then(r => r.text()),
-  fetch(new URL('../shaders/splat.wgsl', import.meta.url)).then(r => r.text()),
-  fetch(new URL('../shaders/composite.wgsl', import.meta.url)).then(r => r.text()),
+async function fetchShader(path) {
+  const url = new URL(path, import.meta.url);
+  url.searchParams.set('build', SHADER_SET_VERSION);
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Could not load shader ${url.pathname} (HTTP ${response.status}).`);
+  return { source: await response.text(), url: url.href };
+}
+const shaderFiles = await Promise.all([
+  fetchShader('../shaders/simulation.wgsl'),
+  fetchShader('../shaders/splat.wgsl'),
+  fetchShader('../shaders/composite.wgsl'),
 ]);
+const [PHYS_SHADER, SPLAT_SHADER, COMP_SHADER] = shaderFiles.map(file => file.source);
 
-for (const [name, source] of [['simulation', PHYS_SHADER], ['splat', SPLAT_SHADER], ['composite', COMP_SHADER]]) {
+for (const [index, [name, source]] of [['simulation', PHYS_SHADER], ['splat', SPLAT_SHADER], ['composite', COMP_SHADER]].entries()) {
   if (!source.includes(`// Fluid shader set: ${SHADER_SET_VERSION}`)) {
-    throw new Error(`The ${name} shader does not match this app build. Reload the SI foundation branch preview so its JavaScript and shader files are served together.`);
+    const servedMarker = source.match(/\/\/ Fluid shader set:\s*[^\s]+/)?.[0] || '(no version marker)';
+    throw new Error(`${name} shader build mismatch: expected ${SHADER_SET_VERSION}, received ${servedMarker} from ${shaderFiles[index].url}. Reload the SI conversion preview after its latest files finish deploying.`);
   }
 }
 
@@ -82,10 +91,12 @@ const splatMod = device.createShaderModule({ code: SPLAT_SHADER, label: 'splat' 
 const compMod  = device.createShaderModule({ code: COMP_SHADER,  label: 'comp'  });
 
 for (const [n, m] of [['phys',physMod],['splat',splatMod],['comp',compMod]]) {
-  m.getCompilationInfo?.().then(info => {
-    for (const msg of info.messages) if (msg.type === 'error')
-      console.error(`[${n}] ${msg.lineNum}:${msg.linePos} ${msg.message}`);
-  });
+  const info = await m.getCompilationInfo?.();
+  const errors = info?.messages.filter(msg => msg.type === 'error') ?? [];
+  if (errors.length) {
+    const details = errors.map(msg => `${msg.lineNum}:${msg.linePos} ${msg.message}`).join('\n');
+    throw new Error(`${n} WGSL compilation failed:\n${details}`);
+  }
 }
 
 /* ---------- buffers ---------- */
@@ -138,6 +149,9 @@ const pipeClearGrid = device.createComputePipeline({ layout: physPL, compute: { 
 const pipeBuildGrid = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'buildGrid' } });
 const pipeDensity   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeDensity' } });
 const pipeColors    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'diffuseColors' } });
+const pipeLambdas   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeLambdas' } });
+const pipeCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeCorrections' } });
+const pipeApplyCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'applyCorrections' } });
 const pipeForces    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeForces'  } });
 const pipeIntegrate = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'integrate'     } });
 const pipeSavePrevious = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'savePreviousPositions' } });
@@ -199,7 +213,7 @@ const linearSamp = device.createSampler({
 
 /* ---------- accum target ---------- */
 let accumTex = null, accumView = null, compBG = null;
-let canvasW = 600, canvasH = 600, dpr = 1;
+let canvasW = WORLD_WIDTH, canvasH = WORLD_HEIGHT, dpr = 1;
 
 function makeAccum(w, h) {
   if (accumTex) accumTex.destroy();
@@ -230,7 +244,7 @@ function resize() {
   const pw = Math.round(side * dpr), ph = Math.round(side * dpr);
   canvas.width = pw; canvas.height = ph;
   canvas.style.width = side + 'px'; canvas.style.height = side + 'px';
-  canvasW = side; canvasH = side;
+  canvasW = WORLD_WIDTH; canvasH = WORLD_HEIGHT;
   makeAccum(pw, ph);
 }
 window.addEventListener('resize', resize);
@@ -239,7 +253,8 @@ resize();
 return {
   device, ctx, particleBuf, paramsBuf, renderBuf, colorBuffers, physBGs,
   previousPositionsBuf, gpuTimer,
-  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeForces, pipeIntegrate, pipeSavePrevious,
+  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeLambdas, pipeCorrections, pipeApplyCorrections,
+  pipeForces, pipeIntegrate, pipeSavePrevious,
   splatPipe, splatBGs, compPipe,
   get compBG() { return compBG; },
   get accumView() { return accumView; },
