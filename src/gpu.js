@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v2';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v3';
 
-const SHADER_SET_VERSION = 'si-units-v2';
+const SHADER_SET_VERSION = 'si-units-v3';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */

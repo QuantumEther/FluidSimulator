@@ -2,9 +2,9 @@
 /* ============================================================================
    WebGPU Fluid Lab — realism upgrade
    ============================================================================ */
-import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v2';
-import { createGpuRuntime } from './gpu.js?v=si-units-v2';
-import { setupInput, setupControls } from './ui.js?v=si-units-v2';
+import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v3';
+import { createGpuRuntime } from './gpu.js?v=si-units-v3';
+import { setupInput, setupControls } from './ui.js?v=si-units-v3';
 import { advanceFixedClock, FIXED_DT } from './fixed-step.mjs';
 import { particleMassKg, particleMassPerDepth } from './si-units.mjs';
 

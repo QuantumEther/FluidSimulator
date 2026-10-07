@@ -1,4 +1,4 @@
-// Fluid shader set: si-units-v2
+// Fluid shader set: si-units-v3
 // Planar SPH kernel with per-depth particle mass (kg/m), returning volumetric density (kg/m³).
 
 struct Particle {
@@ -199,7 +199,9 @@ fn integrate(@builtin(global_invocation_id) gid: vec3<u32>) {
   if(p.x>W-pad){p.x=W-pad;v.x=-abs(v.x)*params.restitution;v.y*=params.wallRetention;}
   if(p.y<pad){p.y=pad;v.y=abs(v.y)*params.restitution;v.x*=params.wallRetention;}
   if(p.y>H-pad){p.y=H-pad;v.y=-abs(v.y)*params.restitution;v.x*=params.wallRetention;}
-  if(any(isNan(p))||any(isInf(p))){p=vec2<f32>(W*0.5,H*0.5);v=vec2<f32>(0.0);}
+  if(p.x!=p.x||p.y!=p.y||abs(p.x)>1e20||abs(p.y)>1e20){
+    p=vec2<f32>(W*0.5,H*0.5);v=vec2<f32>(0.0);
+  }
   particles[i].pos=p;particles[i].vel=v;
 }
 @compute @workgroup_size(64)
