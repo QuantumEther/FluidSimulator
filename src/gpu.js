@@ -15,9 +15,43 @@ if (!adapter) {
   $('backendText').style.color = '#f43f5e';
   throw new Error('This browser did not provide a WebGPU adapter.');
 }
-const device  = await adapter.requestDevice();
+let device;
+if (adapter.features.has('timestamp-query')) {
+  try {
+    device = await adapter.requestDevice({ requiredFeatures: ['timestamp-query'] });
+  } catch (error) {
+    console.warn('GPU timestamp queries unavailable; using CPU-side timing only.', error);
+  }
+}
+if (!device) device = await adapter.requestDevice();
 device.addEventListener('uncapturederror', (e) =>
   console.error('WebGPU:', e.error?.message || e.error));
+
+let gpuTimer = null;
+if (device.features.has('timestamp-query')) {
+  try {
+    gpuTimer = {
+      querySet: device.createQuerySet({ type: 'timestamp', count: 2, label: 'frame timestamps' }),
+      resolveBuffer: device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+        label: 'timestamp resolve buffer',
+      }),
+      slots: Array.from({ length: 4 }, (_, index) => ({
+        buffer: device.createBuffer({
+          size: 16,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+          label: `timestamp readback ${index}`,
+        }),
+        busy: false,
+      })),
+      nextSlot: 0,
+    };
+  } catch (error) {
+    console.warn('GPU timestamp queries unavailable; using CPU-side timing only.', error);
+    gpuTimer = null;
+  }
+}
 
 const ctx = canvas.getContext('webgpu');
 const PRESENT = navigator.gpu.getPreferredCanvasFormat();
@@ -54,6 +88,10 @@ const particleBuf = device.createBuffer({
 const cellHeadsBuf = device.createBuffer({ size: MAX_GRID_CELLS * 4, usage: GPUBufferUsage.STORAGE });
 const particleNextBuf = device.createBuffer({ size: MAX_PART * 4, usage: GPUBufferUsage.STORAGE });
 const accelerationBuf = device.createBuffer({ size: MAX_PART * 8, usage: GPUBufferUsage.STORAGE });
+const previousPositionsBuf = device.createBuffer({
+  size: MAX_PART * 8,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+});
 const colorBuffers = [0, 1].map(() => device.createBuffer({
   size: MAX_PART * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 }));
@@ -70,6 +108,7 @@ const physBGL = device.createBindGroupLayout({
     { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
     { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
     { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
   ],
 });
 const physPL = device.createPipelineLayout({ bindGroupLayouts: [physBGL] });
@@ -83,6 +122,7 @@ const makePhysBG = (src, dst) => device.createBindGroup({
     { binding: 4, resource: { buffer: accelerationBuf } },
     { binding: 5, resource: { buffer: colorBuffers[src] } },
     { binding: 6, resource: { buffer: colorBuffers[dst] } },
+    { binding: 7, resource: { buffer: previousPositionsBuf } },
   ],
 });
 const physBGs = [makePhysBG(0, 1), makePhysBG(1, 0)];
@@ -92,12 +132,15 @@ const pipeDensity   = device.createComputePipeline({ layout: physPL, compute: { 
 const pipeColors    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'diffuseColors' } });
 const pipeForces    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeForces'  } });
 const pipeIntegrate = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'integrate'     } });
+const pipeSavePrevious = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'savePreviousPositions' } });
 
 const splatBGL = device.createBindGroupLayout({
   entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
     { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    { binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
   ],
 });
 const splatPL = device.createPipelineLayout({ bindGroupLayouts: [splatBGL] });
@@ -107,6 +150,8 @@ const splatBGs = colorBuffers.map(colors => device.createBindGroup({
     { binding: 0, resource: { buffer: particleBuf } },
     { binding: 1, resource: { buffer: paramsBuf } },
     { binding: 2, resource: { buffer: colors } },
+    { binding: 3, resource: { buffer: previousPositionsBuf } },
+    { binding: 4, resource: { buffer: renderBuf } },
   ],
 }));
 const splatPipe = device.createRenderPipeline({
@@ -185,7 +230,8 @@ resize();
 
 return {
   device, ctx, particleBuf, paramsBuf, renderBuf, colorBuffers, physBGs,
-  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeForces, pipeIntegrate,
+  previousPositionsBuf, gpuTimer,
+  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeForces, pipeIntegrate, pipeSavePrevious,
   splatPipe, splatBGs, compPipe,
   get compBG() { return compBG; },
   get accumView() { return accumView; },

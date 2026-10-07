@@ -42,6 +42,7 @@ struct Params {
 @group(0) @binding(4) var<storage, read_write> accelerations : array<vec2<f32>>;
 @group(0) @binding(5) var<storage, read> sourceColors : array<vec4<f32>>;
 @group(0) @binding(6) var<storage, read_write> targetColors : array<vec4<f32>>;
+@group(0) @binding(7) var<storage, read_write> previousPositions : array<vec2<f32>>;
 
 const INVALID_PARTICLE : u32 = 0xffffffffu;
 
@@ -301,4 +302,11 @@ fn integrate(@builtin(global_invocation_id) gid : vec3<u32>) {
 
   particles[i].pos = p;
   particles[i].vel = v;
+}
+
+@compute @workgroup_size(64)
+fn savePreviousPositions(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= params.count) { return; }
+  previousPositions[i] = particles[i].pos;
 }

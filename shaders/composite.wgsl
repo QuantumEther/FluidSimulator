@@ -10,8 +10,9 @@ struct RenderParams {
   time          : f32,
   debugView     : f32,
   gridSpacing   : f32,
-  _p0 : f32, _p1 : f32, _p2 : f32, _p3 : f32,
-  _p4 : f32, _p5 : f32, _p6 : f32, _p7 : f32,
+  interpolationAlpha: f32,
+  _p1 : f32, _p2 : f32, _p3 : f32, _p4 : f32,
+  _p5 : f32, _p6 : f32, _p7 : f32,
 };
 @group(0) @binding(0) var accum  : texture_2d<f32>;
 @group(0) @binding(1) var samp   : sampler;
