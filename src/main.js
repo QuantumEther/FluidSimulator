@@ -2,11 +2,14 @@
 /* ============================================================================
    WebGPU Fluid Lab — realism upgrade
    ============================================================================ */
-import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v4';
-import { createGpuRuntime } from './gpu.js?v=si-units-v4';
-import { setupInput, setupControls } from './ui.js?v=si-units-v4';
+import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-performance-v5';
+import { createGpuRuntime } from './gpu.js?v=si-performance-v5';
+import { setupInput, setupControls } from './ui.js?v=si-performance-v5';
 import { advanceFixedClock, FIXED_DT } from './fixed-step.mjs';
 import { particleMassKg, particleMassPerDepth } from './si-units.mjs';
+import { particleCapacity, emissionPatch, REFERENCE_LIMIT } from './emission.mjs';
+import { encodeGrid, encodeSimulation, gridLayout } from './solver.mjs';
+import { usesImplicitViscosity } from './viscosity.mjs';
 
 const canvas = document.getElementById('simCanvas');
 const wrap   = document.getElementById('canvasWrap');
@@ -30,76 +33,52 @@ try {
   throw error;
 }
 
-/* ============================================================================
-   Particle staging
-   ============================================================================ */
-const stage = new Float32Array(MAX_PART * STRIDE);
-const colorStage = new Float32Array(MAX_PART * 4);
-const previousPositionStage = new Float32Array(MAX_PART * 2);
-let live = 0;
+/* Particle state stays on the GPU. The host queues small emission commands. */
+let live = 0, colorIndex = 0, valid = false, massDirty = false;
+let emissionPending = false, emissionEpoch = 0, emissionQueue = [];
+let appliedSpacing = S.spacing;
+let appliedSignature = '';
+const metrics = { frames: 0, submittedTicks: 0, completedTicks: 0, dispatches: 0, neighborSweeps: 0,
+  gridBuilds: 0, computePasses: 0, cpuMs: 0, stages: {}, completionMs: null, samples: [] };
+let benchmarkPaused = false;
 
-function writeP(i, x, y, vx, vy, r, g, b) {
-  const o = i * STRIDE;
-  stage[o+0]=x; stage[o+1]=y; stage[o+2]=vx; stage[o+3]=vy;
-  stage[o+4]=r; stage[o+5]=g; stage[o+6]=b; stage[o+7]=1;
-  stage[o+8]=S.restDensity; stage[o+9]=0;
-  stage[o+10]=particleMassPerDepth(S.restDensity,S.spacing); stage[o+11]=1;
-  stage[o+12]=0; stage[o+13]=0; stage[o+14]=0; stage[o+15]=0;
-  const c = i * 4;
-  colorStage[c]=r; colorStage[c+1]=g; colorStage[c+2]=b; colorStage[c+3]=1;
-  const p = i * 2;
-  previousPositionStage[p]=x; previousPositionStage[p+1]=y;
+function capacity() { return particleCapacity(WORLD_WIDTH, WORLD_HEIGHT, S.spacing, Math.min(S.budget, MAX_PART)); }
+function showCount() { $('countVal').textContent = live.toLocaleString(); }
+function resetParticles() {
+  live = 0; valid = false; emissionEpoch++; emissionQueue = []; showCount();
 }
-function upload(from = 0) {
-  if (live <= from) return;
-  gpu.device.queue.writeBuffer(gpu.particleBuf, from * STRIDE * 4, stage, from * STRIDE, (live - from) * STRIDE);
-  gpu.device.queue.writeBuffer(gpu.colorBuffers[0], from * 16, colorStage, from * 4, (live - from) * 4);
-  gpu.device.queue.writeBuffer(gpu.colorBuffers[1], from * 16, colorStage, from * 4, (live - from) * 4);
-  gpu.device.queue.writeBuffer(gpu.previousPositionsBuf, from * 8, previousPositionStage, from * 2, (live - from) * 2);
+function spawn(x, y, count, color) {
+  if (emissionQueue.length >= 32) return;
+  emissionQueue.push({ x, y, count, color, seed: Math.floor(random01() * 0x100000000) });
 }
-
-/* ---------- spawning ---------- */
-function spawn(px, py, n, col) {
-  const cap = Math.min(S.budget, MAX_PART);
-  if (live >= cap) return;
-  n = Math.min(n, cap - live);
-  const firstNew = live;
-  const spacing = S.spacing;
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
-  const rows = Math.ceil(n / cols);
-  const pad = spacing * 1.25;
-  for (let k = 0; k < n; k++) {
-    const colIndex = k % cols, rowIndex = Math.floor(k / cols);
-    const x = Math.max(pad, Math.min(gpu.canvasW-pad, px + (colIndex-(cols-1)*0.5)*spacing + (random01()-0.5)*spacing*0.18));
-    const y = Math.max(pad, Math.min(gpu.canvasH-pad, py + (rowIndex-(rows-1)*0.5)*spacing + (random01()-0.5)*spacing*0.18));
-    writeP(live + k, x, y,
-      (random01()-0.5) * 0.04,
-      random01() * 0.04,
-      col[0], col[1], col[2]);
-  }
-  live += n;
-  upload(firstNew);
-  $('countVal').textContent = live.toLocaleString();
+function fill() {
+  // Fill is an explicit replacement scene, rather than compressing new liquid into old liquid.
+  resetParticles();
+  spawn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, capacity(), S.randomColor ? randomVibrant() : S.customColor);
 }
 function refreshParticleMasses() {
-  const massPerDepth = particleMassPerDepth(S.restDensity,S.spacing);
-  for (let i=0;i<live;i++) stage[i*STRIDE+10]=massPerDepth;
-  upload(0);
-  const mass = particleMassKg(S.restDensity,S.spacing,S.sliceDepth);
+  if (S.spacing !== appliedSpacing) {
+    const area = live * appliedSpacing * appliedSpacing;
+    appliedSpacing = S.spacing;
+    resetParticles();
+    if (area > 0) spawn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, Math.min(capacity(), Math.round(area / (S.spacing * S.spacing))), S.customColor);
+  }
+  massDirty = true; valid = false;
+  const mass = particleMassKg(S.restDensity, S.spacing, S.sliceDepth);
   $('particleMassVal').textContent = mass < 0.001 ? `${(mass*1e6).toFixed(0)} mg` : `${(mass*1000).toFixed(2)} g`;
 }
 function trimToBudget() {
-  const cap = Math.min(S.budget, MAX_PART);
-  if (live > cap) { live = cap; $('countVal').textContent = live.toLocaleString(); }
+  if (live > capacity()) { live = capacity(); valid = false; showCount(); }
+  if (live > REFERENCE_LIMIT && S.neighborMode === 0) {
+    S.neighborMode = 1; $('neighborMode').value = '1';
+    $('modeStatus').textContent = `Search: Spatial grid · View: ${$('debugView').selectedOptions[0].textContent}`;
+  }
 }
-
-const getCanvasSize = () => ({ width: gpu.canvasW, height: gpu.canvasH });
-const input = setupInput({ canvas, getCanvasSize, spawn, S });
-setupControls({
-  S, $, trimToBudget, getLive: () => live, setLive: value => { live = value; },
-  upload, spawn, pick: () => S.randomColor ? randomVibrant() : S.customColor, getCanvasSize,
-  refreshParticleMasses,
-});
+const getCanvasSize = () => ({ width: WORLD_WIDTH, height: WORLD_HEIGHT });
+setupInput({ canvas, getCanvasSize, spawn, S });
+setupControls({ S, $, trimToBudget, getLive: () => live, setLive: resetParticles,
+  spawn, fill, pick: () => S.randomColor ? randomVibrant() : S.customColor,
+  getCanvasSize, refreshParticleMasses, setRenderScale: value => gpu.setRenderScale(value) });
 refreshParticleMasses();
 
 /* ============================================================================
@@ -109,7 +88,7 @@ const pF = new Float32Array(32);
 const pU = new Uint32Array(pF.buffer);
 const rF = new Float32Array(20);
 
-function writeParams(dt) {
+function writeParams(dt, sampleStats = false) {
   const h = S.spacing * 2;
   pF[0]  = 0;
   pF[1]  = S.gravity;
@@ -132,14 +111,26 @@ function writeParams(dt) {
   pU[18] = S.neighborMode;
   pU[19] = S.debugView;
   pF[20] = S.splatRadius;
+  const invH8 = 1 / (h ** 8);
+  pF[21] = 4 / Math.PI * invH8;
+  pF[22] = -24 / Math.PI * invH8;
+  pF[23] = 40 / Math.PI * invH8;
+  pF[24] = 48 / Math.PI * invH8;
+  pF[25] = pF[21] * (0.91 * h * h) ** 3;
+  pF[26] = particleMassPerDepth(S.restDensity, S.spacing);
+  pF[27] = (S.spacing / 0.002) ** 2;
+  pF[28] = sampleStats ? 1 : 0;
+  pF[29] = usesImplicitViscosity(S) ? 1 : 0;
+  pF[30] = gridLayout(S, live) === 'contiguous' ? 1 : 0;
+  pF[31] = S.sliceDepth;
   gpu.device.queue.writeBuffer(gpu.paramsBuf, 0, pF);
 }
 
 function writeRender(interpolationAlpha) {
   rF[0] = canvas.width;
   rF[1] = canvas.height;
-  rF[2] = 1 / canvas.width;
-  rF[3] = 1 / canvas.height;
+  rF[2] = 1 / gpu.fieldWidth;
+  rF[3] = 1 / gpu.fieldHeight;
   rF[4] = S.normalStrength;
   rF[5] = S.densityThreshold;
   rF[6] = S.specular;
@@ -147,7 +138,7 @@ function writeRender(interpolationAlpha) {
   rF[8] = S.subsurface;
   rF[9] = performance.now() * 0.001;
   rF[10] = S.debugView;
-  rF[11] = S.spacing * canvas.width / WORLD_WIDTH;
+  rF[11] = 2 * S.spacing * canvas.width / WORLD_WIDTH;
   rF[12] = interpolationAlpha;
   gpu.device.queue.writeBuffer(gpu.renderBuf, 0, rF);
 }
@@ -157,8 +148,7 @@ function writeRender(interpolationAlpha) {
    ============================================================================ */
 let lastT = performance.now();
 let fpsAcc = 0, fpsFrames = 0, msSmooth = 0, sampledGpuMs = null;
-let simHzTicks = 0;
-let colorIndex = 0;
+let completedAtLastUi = 0, inFlight = 0, diagnosticPending = false;
 const simClock = { accumulator: 0, droppedSeconds: 0 };
 
 function reserveGpuTimingSlot() {
@@ -179,9 +169,15 @@ function readGpuTiming(slot) {
   if (!slot) return;
   slot.buffer.mapAsync(GPUMapMode.READ).then(() => {
     const view = new DataView(slot.buffer.getMappedRange());
-    const start = view.getBigUint64(0, true);
-    const end = view.getBigUint64(8, true);
-    if (end >= start) sampledGpuMs = Number(end - start) / 1e6;
+    const stages = {};
+    for (const [index, name] of ['compute', 'splat', 'composite'].entries()) {
+      const start = view.getBigUint64(index * 16, true), end = view.getBigUint64(index * 16 + 8, true);
+      stages[name] = end >= start ? Number(end - start) / 1e6 : 0;
+    }
+    metrics.stages = stages;
+    sampledGpuMs = stages.compute + stages.splat + stages.composite;
+    metrics.samples.push({ ...stages, cpuMs: slot.cpuMs, ticks: slot.ticks });
+    if (metrics.samples.length > 600) metrics.samples.shift();
   }).catch(error => {
     console.warn('Could not read GPU timestamp sample.', error);
   }).finally(() => {
@@ -190,7 +186,18 @@ function readGpuTiming(slot) {
   });
 }
 
-function frame(now) {
+function frame(now, forcedTicks = null) {
+  if (gpu.lostReason) {
+    $('startupErrorText').textContent = 'GPU connection lost. Reload the page to restart.';
+    $('startupError').hidden = false;
+    return;
+  }
+  if (benchmarkPaused && forcedTicks === null && !emissionQueue.length && !massDirty) {
+    requestAnimationFrame(frame);
+    return;
+  }
+  // Bound queue latency instead of continuing to enqueue an overloaded simulation.
+  if (forcedTicks === null && inFlight >= 2) { requestAnimationFrame(frame); return; }
   const rawDt = Math.max(0, (now - lastT) / 1000);
   lastT = now;
 
@@ -199,107 +206,81 @@ function frame(now) {
     $('fpsVal').textContent = Math.round(fpsFrames / fpsAcc);
     $('msVal').textContent  = msSmooth.toFixed(1);
     $('gpuMsVal').textContent = sampledGpuMs === null ? 'n/a' : sampledGpuMs.toFixed(2);
-    $('simHzVal').textContent = (simHzTicks / fpsAcc).toFixed(0);
+    $('simHzVal').textContent = ((metrics.completedTicks - completedAtLastUi) / fpsAcc).toFixed(0);
     $('droppedVal').textContent = simClock.droppedSeconds.toFixed(2);
     fpsAcc = 0; fpsFrames = 0;
-    simHzTicks = 0;
+    completedAtLastUi = metrics.completedTicks;
   }
 
   $('seedVal').textContent = String(SIM_SEED);
 
   const t0 = performance.now();
 
-  const schedule = advanceFixedClock(simClock, rawDt, S.timeScale);
-  simHzTicks += schedule.ticks;
-  const lastPtr = input.getLastPointer();
+  const schedule = forcedTicks === null ? advanceFixedClock(simClock, rawDt, benchmarkPaused ? 0 : S.timeScale) : { ticks: forcedTicks, alpha: 1 };
+  trimToBudget();
+  gpu.setRenderScale(S.renderScale);
 
   const substeps = Math.max(1, Math.round(S.substeps));
   const subDt = FIXED_DT / substeps;
-  writeParams(subDt);
+  const sampleStats = live > 0 && !diagnosticPending && S.sampleDiagnostics !== false && metrics.frames % 60 === 0;
+  writeParams(subDt, sampleStats);
 
+  const signature = `${live}:${S.spacing}:${S.restDensity}:${S.neighborMode}:${gridLayout(S, live)}`;
+  if (signature !== appliedSignature) valid = false;
+  appliedSignature = signature;
   const enc = gpu.device.createCommandEncoder();
-  const timingSlot = reserveGpuTimingSlot();
-  let timingStarted = false;
-
-  if (live > 0) {
-    const wg = Math.ceil(live / 64);
-    for (let tick = 0; tick < schedule.ticks; tick++) {
-      const timingWrites = timingSlot && !timingStarted
-        ? { timestampWrites: { querySet: gpu.gpuTimer.querySet, beginningOfPassWriteIndex: 0 } }
-        : {};
-      if (timingSlot && !timingStarted) timingStarted = true;
-      let cp = enc.beginComputePass({ label: 'save interpolation positions', ...timingWrites });
-      cp.setPipeline(gpu.pipeSavePrevious);
-      cp.setBindGroup(0, gpu.physBGs[colorIndex]);
-      cp.dispatchWorkgroups(wg);
-      cp.end();
-
-      const buildGridAndDensity = (label) => {
-        if (S.neighborMode === 1) {
-          let pass=enc.beginComputePass({label:`${label}: clear grid`});
-          pass.setPipeline(gpu.pipeClearGrid);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(Math.ceil(pU[16]*pU[17]/64));pass.end();
-          pass=enc.beginComputePass({label:`${label}: build grid`});
-          pass.setPipeline(gpu.pipeBuildGrid);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(wg);pass.end();
-        }
-        const pass=enc.beginComputePass({label:`${label}: density`});
-        pass.setPipeline(gpu.pipeDensity);pass.setBindGroup(0,gpu.physBGs[colorIndex]);pass.dispatchWorkgroups(wg);pass.end();
-      };
-      for (let step = 0; step < substeps; step++) {
-        buildGridAndDensity('pre-step');
-        cp=enc.beginComputePass({label:'physical forces'});
-        cp.setPipeline(gpu.pipeForces);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-        cp=enc.beginComputePass({label:'predict particle motion'});
-        cp.setPipeline(gpu.pipeIntegrate);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-        for (let iteration=0;iteration<S.solverIterations;iteration++) {
-          buildGridAndDensity(`constraint ${iteration+1}`);
-          cp=enc.beginComputePass({label:'PBF density multipliers'});
-          cp.setPipeline(gpu.pipeLambdas);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-          cp=enc.beginComputePass({label:'PBF position corrections'});
-          cp.setPipeline(gpu.pipeCorrections);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-          cp=enc.beginComputePass({label:'apply PBF corrections'});
-          cp.setPipeline(gpu.pipeApplyCorrections);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-        }
-        buildGridAndDensity('post-constraint');
-        cp=enc.beginComputePass({label:'dye diffusion'});
-        cp.setPipeline(gpu.pipeColors);cp.setBindGroup(0,gpu.physBGs[colorIndex]);cp.dispatchWorkgroups(wg);cp.end();
-        colorIndex = 1 - colorIndex;
+  const timingSlot = metrics.frames % 15 === 0 ? reserveGpuTimingSlot() : null;
+  if (timingSlot) timingSlot.ticks = schedule.ticks;
+  const timestampWrites = index => timingSlot ? { timestampWrites: { querySet: gpu.gpuTimer.querySet,
+    beginningOfPassWriteIndex: index, endOfPassWriteIndex: index + 1 } } : {};
+  const stats = { dispatches: 0, neighborSweeps: 0, gridBuilds: 0 };
+  const cp = enc.beginComputePass({ label: 'ordered fluid simulation', ...timestampWrites(0) });
+  const dispatch = (pipeline, groups, bind = gpu.physBGs[colorIndex]) => {
+    cp.setPipeline(pipeline); cp.setBindGroup(0, bind); cp.dispatchWorkgroups(groups); stats.dispatches++;
+  };
+  if (sampleStats) dispatch(gpu.pipeClearStats, 1);
+  if (massDirty && live) dispatch(gpu.pipeUpdateMasses, Math.ceil(live / 64));
+  massDirty = false;
+  let emitted = false, pendingEpoch = emissionEpoch;
+  if (!emissionPending && emissionQueue.length) {
+    const command = emissionQueue.shift();
+    const patch = emissionPatch({ width: WORLD_WIDTH, height: WORLD_HEIGHT, spacing: S.spacing,
+      x: command.x, y: command.y, count: Math.min(command.count, capacity() - live) });
+    if (patch) {
+      if (S.neighborMode === 1 && !valid) {
+        encodeGrid(cp, gpu, live, pU[16] * pU[17], gpu.physBGs[colorIndex], stats, gridLayout(S, live));
       }
+      const emissionData = new Float32Array(12), emissionU = new Uint32Array(emissionData.buffer);
+      emissionData[0] = patch.x; emissionData[1] = patch.y; emissionData[2] = S.spacing;
+      emissionU[3] = patch.count; emissionData.set([...command.color, 1], 4);
+      emissionU[8] = patch.columns; emissionU[9] = command.seed;
+      gpu.device.queue.writeBuffer(gpu.emissionBuf, 0, emissionData);
+      dispatch(gpu.pipeClearEmission, 1, gpu.physBGs[0]);
+      dispatch(gpu.pipeEmit, Math.ceil(patch.count / 64), gpu.physBGs[0]);
+      dispatch(gpu.pipeCopyEmittedColors, Math.ceil(patch.count / 64), gpu.physBGs[1]);
+      emitted = true; emissionPending = true;
     }
   }
-
-  {
-    const timingWrites = timingSlot && !timingStarted
-      ? { timestampWrites: { querySet: gpu.gpuTimer.querySet, beginningOfPassWriteIndex: 0 } }
-      : {};
-    if (timingSlot && !timingStarted) timingStarted = true;
-    const rp = enc.beginRenderPass({
-      ...timingWrites,
-      colorAttachments: [{
-        view: gpu.accumView,
-        clearValue: { r: 0, g: 0, b: 0, a: 0 },
-        loadOp: 'clear', storeOp: 'store',
-      }],
-    });
-    if (live > 0) {
-      rp.setPipeline(gpu.splatPipe);
-      rp.setBindGroup(0, gpu.splatBGs[colorIndex]);
-      rp.draw(6, live, 0, 0);
-    }
-    rp.end();
+  ({ colorIndex, valid } = encodeSimulation({ pass: cp, gpu, settings: S, count: live,
+    cells: pU[16] * pU[17], ticks: schedule.ticks, colorIndex, valid, stats }));
+  const collectedStats = sampleStats && valid;
+  if (collectedStats) {
+    dispatch(gpu.pipeComputeStats, Math.ceil(Math.max(live, pU[16] * pU[17]) / 64));
+    dispatch(gpu.pipeReduceStats, 1);
   }
+  cp.end();
+  if (collectedStats) enc.copyBufferToBuffer(gpu.cellOffsetsBuf, 39280 * 4, gpu.statsReadback, 0, 40);
+  if (emitted) enc.copyBufferToBuffer(gpu.cellCountsBuf, 65536 * 4, gpu.emissionReadback, 0, 4);
+  const rp = enc.beginRenderPass({ label: 'particle field', ...timestampWrites(2),
+    colorAttachments: [{ view: gpu.accumView, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }] });
+  if (live) { rp.setPipeline(gpu.splatPipe); rp.setBindGroup(0, gpu.splatBGs[colorIndex]); rp.draw(6, live); }
+  rp.end();
 
   writeRender(schedule.alpha);
 
   {
-    const timestampWrites = timingSlot
-      ? {
-          querySet: gpu.gpuTimer.querySet,
-          ...(timingStarted ? {} : { beginningOfPassWriteIndex: 0 }),
-          endOfPassWriteIndex: 1,
-        }
-      : undefined;
     const rp = enc.beginRenderPass({
-      ...(timestampWrites ? { timestampWrites } : {}),
+      label: 'composite', ...timestampWrites(4),
       colorAttachments: [{
         view: gpu.ctx.getCurrentTexture().createView(),
         clearValue: { r: 0.02, g: 0.03, b: 0.06, a: 1 },
@@ -313,15 +294,53 @@ function frame(now) {
   }
 
   if (timingSlot) {
-    enc.resolveQuerySet(gpu.gpuTimer.querySet, 0, 2, gpu.gpuTimer.resolveBuffer, 0);
-    enc.copyBufferToBuffer(gpu.gpuTimer.resolveBuffer, 0, timingSlot.buffer, 0, 16);
+    enc.resolveQuerySet(gpu.gpuTimer.querySet, 0, 6, gpu.gpuTimer.resolveBuffer, 0);
+    enc.copyBufferToBuffer(gpu.gpuTimer.resolveBuffer, 0, timingSlot.buffer, 0, 48);
   }
 
   gpu.device.queue.submit([enc.finish()]);
-  msSmooth = msSmooth * 0.9 + (performance.now() - t0) * 0.1;
+  metrics.frames++; metrics.submittedTicks += schedule.ticks;
+  Object.assign(metrics, stats, { computePasses: 1, cpuMs: performance.now() - t0 });
+  if (timingSlot) timingSlot.cpuMs = metrics.cpuMs;
+  msSmooth = msSmooth * 0.9 + metrics.cpuMs * 0.1;
+  if (collectedStats) {
+    diagnosticPending = true;
+    const forceSamples = live * substeps * schedule.ticks;
+    const correctionSamples = forceSamples * S.solverIterations;
+    gpu.statsReadback.mapAsync(GPUMapMode.READ).then(() => {
+      const data = new Float32Array(gpu.statsReadback.getMappedRange());
+      metrics.diagnostics = { nonfiniteCount: data[0], maxSpeed: data[1], maxCompression: data[2], kineticEnergyJ: data[3],
+        dyeMass: Array.from(data.slice(4, 7)), maxCellOccupancy: data[7],
+        accelerationCapFraction: forceSamples ? data[8] / forceSamples : 0,
+        correctionCapFraction: correctionSamples ? data[9] / correctionSamples : 0 };
+    }).catch(error => console.warn('GPU diagnostic sample failed:', error)).finally(() => {
+      if (gpu.statsReadback.mapState === 'mapped') gpu.statsReadback.unmap(); diagnosticPending = false;
+    });
+  }
+  if (emitted) {
+    gpu.emissionReadback.mapAsync(GPUMapMode.READ).then(() => {
+      const accepted = new Uint32Array(gpu.emissionReadback.getMappedRange())[0];
+      if (pendingEpoch === emissionEpoch) {
+        live += accepted; trimToBudget(); valid = false;
+        // A material edit can arrive while the accepted-count readback is pending.
+        massDirty = true; showCount();
+      }
+    }).catch(error => console.error('Particle emission readback failed:', error)).finally(() => {
+      if (gpu.emissionReadback.mapState === 'mapped') gpu.emissionReadback.unmap();
+      emissionPending = false;
+    });
+  }
+  inFlight++;
+  const submitted = metrics.submittedTicks, completionStart = performance.now();
+  const sampleCompletion = metrics.frames % 30 === 0 || forcedTicks !== null;
+  gpu.device.queue.onSubmittedWorkDone().then(() => {
+    metrics.completedTicks = Math.max(metrics.completedTicks, submitted);
+    if (sampleCompletion) metrics.completionMs = performance.now() - completionStart;
+  }).catch(error => console.warn('GPU completion failed:', error)).finally(() => { inFlight--; });
   readGpuTiming(timingSlot);
 
-  requestAnimationFrame(frame);
+  if (forcedTicks === null) requestAnimationFrame(frame);
+  return { ...stats, computePasses: 1, cpuMs: metrics.cpuMs };
 }
 
 /* ---------- seed & go ---------- */
@@ -330,3 +349,48 @@ spawn(gpu.canvasW * 0.30, 0.16, 100, randomVibrant());
 spawn(gpu.canvasW * 0.70, 0.16, 100, randomVibrant());
 
 requestAnimationFrame((t) => { lastT = t; frame(t); });
+
+// Opt-in harness API; ordinary runs do not expose device resources or read particle state back.
+if (new URLSearchParams(location.search).has('benchmark')) {
+  benchmarkPaused = true;
+  window.fluidLab = {
+    settings: S, metrics, gpu,
+    get count() { return live; }, get emissionPending() { return emissionPending || emissionQueue.length > 0; },
+    pause(value = true) { benchmarkPaused = value; },
+    async step(ticks = 1) { const result = frame(performance.now(), ticks); await gpu.device.queue.onSubmittedWorkDone(); return result; },
+    async setScene(positions, velocities = [], colors = []) {
+      if (emissionPending) await gpu.device.queue.onSubmittedWorkDone();
+      while (emissionPending) await new Promise(resolve => setTimeout(resolve, 0));
+      resetParticles();
+      live = Math.min(positions.length, capacity());
+      const data = new Float32Array(live * STRIDE), integers = new Uint32Array(data.buffer);
+      const dye = new Float32Array(live * 4), previous = new Float32Array(live * 2);
+      for (let i = 0; i < live; i++) {
+        data.set([...positions[i], ...(velocities[i] || [0, 0])], i * STRIDE);
+        data[i * STRIDE + 8] = S.restDensity; data[i * STRIDE + 10] = particleMassPerDepth(S.restDensity, S.spacing);
+        integers[i * STRIDE + 11] = 1;
+        dye.set([...(colors[i] || [0.2, 0.6, 0.9]), 1], i * 4); previous.set(positions[i], i * 2);
+      }
+      if (live) {
+        gpu.device.queue.writeBuffer(gpu.particleBuf, 0, data);
+        for (const buffer of gpu.colorBuffers) gpu.device.queue.writeBuffer(buffer, 0, dye);
+        gpu.device.queue.writeBuffer(gpu.previousPositionsBuf, 0, previous);
+      }
+      colorIndex = 0; showCount();
+    },
+    async readState() {
+      const sizes = [live * STRIDE * 4, live * 16, live * 8];
+      const sources = [gpu.particleBuf, gpu.colorBuffers[colorIndex], gpu.previousPositionsBuf];
+      const result = [];
+      for (let index = 0; index < sources.length; index++) {
+        if (!sizes[index]) { result.push([]); continue; }
+        const buffer = gpu.device.createBuffer({size:sizes[index],usage:GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+        const encoder = gpu.device.createCommandEncoder(); encoder.copyBufferToBuffer(sources[index],0,buffer,0,sizes[index]);
+        gpu.device.queue.submit([encoder.finish()]); await buffer.mapAsync(GPUMapMode.READ);
+        result.push(Array.from(new Float32Array(buffer.getMappedRange()))); buffer.unmap(); buffer.destroy();
+      }
+      return { particles: result[0], colors: result[1], previous: result[2] };
+    },
+    spawn, fill, refreshParticleMasses,
+  };
+}

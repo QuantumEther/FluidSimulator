@@ -1,5 +1,5 @@
 
-// Fluid shader set: si-units-v4
+// Fluid shader set: si-performance-v5
 
 struct RenderParams {
   resolution    : vec2<f32>,
@@ -78,8 +78,9 @@ fn fs(in : VSOut) -> @location(0) vec4<f32> {
 
   if (alpha < 0.003) { return vec4<f32>(bgc, 1.0); }
 
-  let gx = (r - l) * P.normalStrength;
-  let gy = (u - dn) * P.normalStrength;
+  // Preserve the artistic strength at a 720px reference field, independent of DPR/scale.
+  let gx = (r - l) * P.normalStrength / (tx.x * 720.0);
+  let gy = (u - dn) * P.normalStrength / (tx.y * 720.0);
   var n = normalize(vec3<f32>(-gx, gy, 1.0));
 
   let thick = clamp(den * 0.55, 0.0, 1.2);

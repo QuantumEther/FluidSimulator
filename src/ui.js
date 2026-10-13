@@ -1,4 +1,5 @@
-import { MAX_PART, SLIDERS, random01, randomVibrant } from './config.js?v=si-units-v4';
+import { SLIDERS, random01, randomVibrant } from './config.js?v=si-performance-v5';
+import { REFERENCE_LIMIT } from './emission.mjs';
 
 export function setupInput({ canvas, getCanvasSize, spawn, S }) {
 let down = false, lastSpawn = [0,0], lastPtr = [-1,-1];
@@ -48,7 +49,7 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 
-export function setupControls({ S, $, trimToBudget, getLive, setLive, upload, spawn, pick, getCanvasSize, refreshParticleMasses }) {
+export function setupControls({ S, $, trimToBudget, getLive, setLive, spawn, fill, pick, getCanvasSize, refreshParticleMasses, setRenderScale }) {
 function hexRgb01(hex) {
   const n = parseInt(hex.replace('#',''), 16);
   return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255];
@@ -80,6 +81,7 @@ function buildUI() {
       $('presetSelect').value = 'custom';
       if (sl.k === 'budget') trimToBudget();
       if (sl.k === 'spacing' || sl.k === 'restDensity') refreshParticleMasses();
+      if (sl.k === 'renderScale') setRenderScale(S.renderScale);
     });
   }
 }
@@ -102,7 +104,8 @@ function updateModeStatus() {
   $('modeStatus').textContent = `Search: ${neighborMode.selectedOptions[0].textContent} · View: ${debugView.selectedOptions[0].textContent}`;
 }
 neighborMode.addEventListener('change', () => {
-  S.neighborMode = Number(neighborMode.value);
+  S.neighborMode = getLive() > REFERENCE_LIMIT ? 1 : Number(neighborMode.value);
+  neighborMode.value = String(S.neighborMode);
   presetSelect.value = 'custom';
   updateModeStatus();
 });
@@ -166,13 +169,9 @@ $('randBtn').onclick = () => { S.randomColor = true;
 $('colorPick').oninput = e => { S.randomColor = false;
   S.customColor = hexRgb01(e.target.value);
   $('randBtn').className = 'px-3 py-2 rounded-xl text-xs font-medium border border-white/10 bg-slate-800 text-slate-400'; };
-$('resetBtn').onclick = () => { setLive(0); upload(); $('countVal').textContent = '0'; };
+$('resetBtn').onclick = () => { setLive(0); $('countVal').textContent = '0'; };
 $('fillBtn').onclick = () => {
-  const live = getLive();
-  const target = Math.min(S.budget, MAX_PART);
-  const need = target - live;
-  if (need <= 0) return;
-  spawn(getCanvasSize().width*0.5,getCanvasSize().height*0.48,need,pick());
+  fill();
 };
 $('spawnBtn').onclick = () => {
   const x = 0.1 + random01() * Math.max(0.01, getCanvasSize().width - 0.2);

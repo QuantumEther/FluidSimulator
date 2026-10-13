@@ -22,7 +22,7 @@ export const S = {
   viscosity: 0.001, surfaceTension: 0.072, diffusivity: 1e-9,
   sliceDepth: SLICE_DEPTH, restitution: 0.02, wallRetention: 0.99,
   splatRadius: 0.006, densityThreshold: 0.55, normalStrength: 150,
-  specular: 1.4, fresnel: 0.6, subsurface: 0.65,
+  specular: 1.4, fresnel: 0.6, subsurface: 0.65, renderScale: 1,
   neighborMode: 1, debugView: 0, randomColor: true, customColor: [0.13, 0.83, 0.92],
 };
 
@@ -30,7 +30,7 @@ const fmt = (n, digits=2) => Number(n).toFixed(digits);
 export const SLIDERS = [
   {g:'time', k:'budget', l:'Maximum particles', min:1000, max:50000, step:1000, fmt:n=>n.toLocaleString()},
   {g:'time', k:'timeScale', l:'Simulation speed', min:0.1, max:2, step:0.05, fmt:n=>`${fmt(n,2)}×`},
-  {g:'time', k:'substeps', l:'Time subdivisions / frame', min:1, max:8, step:1, fmt:n=>`${n}`},
+  {g:'time', k:'substeps', l:'Time subdivisions / physics tick', min:1, max:8, step:1, fmt:n=>`${n}`},
   {g:'time', k:'solverIterations', l:'Density solver iterations', min:1, max:5, step:1, fmt:n=>`${n}`},
   {g:'physics', k:'gravity', l:'Gravity', min:0, max:20, step:0.1, fmt:n=>`${fmt(n,2)} m/s²`},
   {g:'physics', k:'restDensity', l:'Rest density', min:500, max:1500, step:10, fmt:n=>`${Math.round(n)} kg/m³`},
@@ -41,6 +41,7 @@ export const SLIDERS = [
   {g:'boundary', k:'restitution', l:'Wall restitution', min:0, max:1, step:0.01, fmt:n=>fmt(n,2)},
   {g:'boundary', k:'wallRetention', l:'Tangential velocity retention', min:0.5, max:1, step:0.01, fmt:n=>fmt(n,2)},
   {g:'render', k:'splatRadius', l:'Particle render radius', min:0.003, max:0.012, step:0.0002, fmt:n=>`${fmt(n*1000,1)} mm`},
+  {g:'render', k:'renderScale', l:'Fluid render resolution', min:0.5, max:1, step:0.25, fmt:n=>`${Math.round(n*100)}%`},
   {g:'render', k:'densityThreshold', l:'Fluid surface threshold', min:0.2, max:1.5, step:0.01, fmt:n=>fmt(n,2)},
   {g:'render', k:'normalStrength', l:'Surface normal strength', min:50, max:500, step:5, fmt:n=>`${Math.round(n)}`},
   {g:'render', k:'specular', l:'Specular light', min:0, max:4, step:0.05, fmt:n=>fmt(n,2)},

@@ -33,7 +33,7 @@
       <div><div class="text-slate-400 text-[10px] uppercase">FPS</div>
            <div id="fpsVal" class="text-indigo-400 font-bold">60</div></div>
       <div class="h-6 w-px bg-white/10"></div>
-      <div><div class="text-slate-400 text-[10px] uppercase">Sim Hz</div>
+      <div><div class="text-slate-400 text-[10px] uppercase">Completed sim Hz</div>
            <div id="simHzVal" class="text-cyan-300 font-bold">60</div></div>
       <div class="h-6 w-px bg-white/10"></div>
       <div><div class="text-slate-400 text-[10px] uppercase">Particles</div>
@@ -96,8 +96,8 @@
           </select>
         </label>
         <div id="modeStatus" class="text-[10px] text-slate-500 leading-relaxed">Search: Spatial grid · View: Fluid appearance</div>
-        <div class="text-[10px] text-slate-500 leading-relaxed">All quantities are SI. This is a 2D cross-section extruded through a 10 cm depth; particle masses are per-depth values.</div>
-        <div class="text-[10px] text-slate-500 leading-relaxed">At high particle counts, use Spatial grid; All pairs is a slow reference mode.</div>
+        <div class="text-[10px] text-slate-500 leading-relaxed">All quantities are SI. Fill replaces the scene. Changing spacing restarts the liquid at the new resolution, preserving volume up to tank and particle limits. Density changes preserve particle volume.</div>
+        <div class="text-[10px] text-slate-500 leading-relaxed">All pairs is a reference mode for up to 1,000 particles. Thicker fluids need more simulation work.</div>
       </div>
 
       <details open>
@@ -145,12 +145,12 @@
       </details>
 
       <div class="text-[10px] text-slate-400/90 leading-relaxed bg-slate-900/60 p-2 rounded-lg">
-        💡 Click / drag to pour. Higher budget = finer detail.
+        💡 Click / drag to pour into empty space. Budget limits the amount of liquid; smaller spacing gives finer detail.
       </div>
     </div>
   </div>
 </div>
 
-<script type="module" src="./src/main.js?v=si-units-v4"></script>
+<script type="module" src="./src/main.js?v=si-performance-v5"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Fluid shader set: si-units-v4
+// Fluid shader set: si-performance-v5
 
 struct Particle {
   pos          : vec2<f32>,
@@ -36,7 +36,7 @@ struct Params {
   debugView     : u32,
   splatRadius   : f32,
   _p0 : f32, _p1 : f32, _p2 : f32, _p3 : f32,
-  _p4 : f32, _p5 : f32, _p6 : f32, _p7 : f32,
+  _p4 : f32, _p5 : f32, splatWeight : f32, _p7 : f32,
 };
 
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;
@@ -125,6 +125,6 @@ fn vs(@builtin(vertex_index) vi : u32, @builtin(instance_index) ii : u32) -> VSO
 fn fs(in : VSOut) -> @location(0) vec4<f32> {
   let r2 = dot(in.uv, in.uv);
   if (r2 > 1.0) { discard; }
-  let w = exp(-r2 * 3.6) * 0.85;
+  let w = exp(-r2 * 3.6) * 0.85 * params.splatWeight;
   return vec4<f32>(w, in.color.r * w, in.color.g * w, in.color.b * w);
 }
