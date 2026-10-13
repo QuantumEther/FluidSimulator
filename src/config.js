@@ -1,5 +1,5 @@
 import { createRandom } from './random.mjs';
-import { PRESETS, DEFAULT_PRESET_ID } from './presets.mjs?v=si-smooth-flow-v6';
+import { PRESETS, DEFAULT_PRESET_ID } from './presets.mjs?v=si-smooth-flow-v7';
 export { PRESETS, DEFAULT_PRESET_ID };
 
 export const MAX_PART = 50000;

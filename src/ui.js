@@ -1,4 +1,4 @@
-import { SLIDERS, random01, randomVibrant, PRESETS, DEFAULT_PRESET_ID } from './config.js?v=si-smooth-flow-v6';
+import { SLIDERS, random01, randomVibrant, PRESETS, DEFAULT_PRESET_ID } from './config.js?v=si-smooth-flow-v7';
 import { REFERENCE_LIMIT } from './emission.mjs';
 
 export function setupInput({ canvas, getCanvasSize, spawn, S }) {
