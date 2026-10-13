@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-units-v4';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-performance-v5';
 
-const SHADER_SET_VERSION = 'si-units-v4';
+const SHADER_SET_VERSION = 'si-performance-v5';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */
@@ -26,6 +26,8 @@ if (adapter.features.has('timestamp-query')) {
   }
 }
 if (!device) device = await adapter.requestDevice();
+let lostReason = null;
+device.lost.then(info => { lostReason = info.message || 'The GPU device was lost. Reload to restart.'; });
 device.addEventListener('uncapturederror', (e) =>
   console.error('WebGPU:', e.error?.message || e.error));
 
@@ -33,15 +35,15 @@ let gpuTimer = null;
 if (device.features.has('timestamp-query')) {
   try {
     gpuTimer = {
-      querySet: device.createQuerySet({ type: 'timestamp', count: 2, label: 'frame timestamps' }),
+      querySet: device.createQuerySet({ type: 'timestamp', count: 6, label: 'frame stage timestamps' }),
       resolveBuffer: device.createBuffer({
-        size: 16,
+        size: 48,
         usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
         label: 'timestamp resolve buffer',
       }),
       slots: Array.from({ length: 4 }, (_, index) => ({
         buffer: device.createBuffer({
-          size: 16,
+          size: 48,
           usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
           label: `timestamp readback ${index}`,
         }),
@@ -100,19 +102,24 @@ for (const [n, m] of [['phys',physMod],['splat',splatMod],['comp',compMod]]) {
 }
 
 /* ---------- buffers ---------- */
+device.pushErrorScope('validation');
 const particleBuf = device.createBuffer({
   size:  MAX_PART * STRIDE * 4,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
 });
-const cellHeadsBuf = device.createBuffer({ size: MAX_GRID_CELLS * 4, usage: GPUBufferUsage.STORAGE });
-const particleNextBuf = device.createBuffer({ size: MAX_PART * 4, usage: GPUBufferUsage.STORAGE });
+const cellCountsBuf = device.createBuffer({ size: (2 * MAX_GRID_CELLS + 3) * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+const cellOffsetsBuf = device.createBuffer({ size: (MAX_GRID_CELLS + 256 + 782 * 8 + 10) * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+const sortedIdsBuf = device.createBuffer({ size: MAX_PART * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+const emissionBuf = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const statsReadback = device.createBuffer({ size: 40, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+const emissionReadback = device.createBuffer({ size: 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
 const accelerationBuf = device.createBuffer({ size: MAX_PART * 8, usage: GPUBufferUsage.STORAGE });
 const previousPositionsBuf = device.createBuffer({
   size: MAX_PART * 8,
-  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
 });
 const colorBuffers = [0, 1].map(() => device.createBuffer({
-  size: MAX_PART * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  size: MAX_PART * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
 }));
 const paramsBuf = device.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 const renderBuf = device.createBuffer({ size:  80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -128,6 +135,8 @@ const physBGL = device.createBindGroupLayout({
     { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
     { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
     { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 9, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
   ],
 });
 const physPL = device.createPipelineLayout({ bindGroupLayouts: [physBGL] });
@@ -136,30 +145,50 @@ const makePhysBG = (src, dst) => device.createBindGroup({
   entries: [
     { binding: 0, resource: { buffer: particleBuf } },
     { binding: 1, resource: { buffer: paramsBuf } },
-    { binding: 2, resource: { buffer: cellHeadsBuf } },
-    { binding: 3, resource: { buffer: particleNextBuf } },
+    { binding: 2, resource: { buffer: cellCountsBuf } },
+    { binding: 3, resource: { buffer: cellOffsetsBuf } },
     { binding: 4, resource: { buffer: accelerationBuf } },
     { binding: 5, resource: { buffer: colorBuffers[src] } },
     { binding: 6, resource: { buffer: colorBuffers[dst] } },
     { binding: 7, resource: { buffer: previousPositionsBuf } },
+    { binding: 8, resource: { buffer: sortedIdsBuf } },
+    { binding: 9, resource: { buffer: emissionBuf } },
   ],
 });
 const physBGs = [makePhysBG(0, 1), makePhysBG(1, 0)];
-const pipeClearGrid = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'clearGrid' } });
-const pipeBuildGrid = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'buildGrid' } });
-const pipeDensity   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeDensity' } });
-const pipeColors    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'diffuseColors' } });
-const pipeLambdas   = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeLambdas' } });
-const pipeCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeCorrections' } });
-const pipeApplyCorrections = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'applyCorrections' } });
-const pipeForces    = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'computeForces'  } });
-const pipeIntegrate = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'integrate'     } });
-const pipeSavePrevious = device.createComputePipeline({ layout: physPL, compute: { module: physMod, entryPoint: 'savePreviousPositions' } });
+const pipeClearGrid = device.createComputePipeline({label: 'clearGrid', layout: physPL, compute: { module: physMod, entryPoint: 'clearGrid' } });
+const pipeClearLinkedGrid = device.createComputePipeline({label:'clearLinkedGrid',layout:physPL,compute:{module:physMod,entryPoint:'clearLinkedGrid'}});
+const pipeBuildLinkedGrid = device.createComputePipeline({label:'buildLinkedGrid',layout:physPL,compute:{module:physMod,entryPoint:'buildLinkedGrid'}});
+const pipeCountGrid = device.createComputePipeline({label: 'countGrid', layout: physPL, compute: { module: physMod, entryPoint: 'countGrid' } });
+const pipeScanCells = device.createComputePipeline({label: 'scanCells', layout: physPL, compute: { module: physMod, entryPoint: 'scanCells' } });
+const pipeScanBlocks = device.createComputePipeline({label: 'scanBlocks', layout: physPL, compute: { module: physMod, entryPoint: 'scanBlocks' } });
+const pipeScatterGrid = device.createComputePipeline({label: 'scatterGrid', layout: physPL, compute: { module: physMod, entryPoint: 'scatterGrid' } });
+const pipeDensity = device.createComputePipeline({label: 'computeDensity', layout: physPL, compute: { module: physMod, entryPoint: 'computeDensity' } });
+const pipeDensityLambda = device.createComputePipeline({label: 'computeDensityLambda', layout: physPL, compute: { module: physMod, entryPoint: 'computeDensityLambda' } });
+const pipeDensityColors = device.createComputePipeline({label: 'computeDensityColors', layout: physPL, compute: { module: physMod, entryPoint: 'computeDensityColors' } });
+const pipeLambdasReference = device.createComputePipeline({label:'lambdasReference',layout:physPL,compute:{module:physMod,entryPoint:'lambdasReference'}});
+const pipeColorsReference = device.createComputePipeline({label:'colorsReference',layout:physPL,compute:{module:physMod,entryPoint:'colorsReference'}});
+const pipeCorrections = device.createComputePipeline({label: 'computeCorrections', layout: physPL, compute: { module: physMod, entryPoint: 'computeCorrections' } });
+const pipeApplyCorrections = device.createComputePipeline({label: 'applyCorrections', layout: physPL, compute: { module: physMod, entryPoint: 'applyCorrections' } });
+const pipeForces = device.createComputePipeline({label: 'computeForces', layout: physPL, compute: { module: physMod, entryPoint: 'computeForces' } });
+const pipeIntegrate = device.createComputePipeline({label: 'integrate', layout: physPL, compute: { module: physMod, entryPoint: 'integrate' } });
+const pipeSavePrevious = device.createComputePipeline({label: 'savePreviousPositions', layout: physPL, compute: { module: physMod, entryPoint: 'savePreviousPositions' } });
+const pipeUpdateMasses = device.createComputePipeline({label: 'updateMasses', layout: physPL, compute: { module: physMod, entryPoint: 'updateMasses' } });
+const pipeClearEmission = device.createComputePipeline({label: 'clearEmission', layout: physPL, compute: { module: physMod, entryPoint: 'clearEmission' } });
+const pipeEmit = device.createComputePipeline({label: 'emitParticles', layout: physPL, compute: { module: physMod, entryPoint: 'emitParticles' } });
+const pipeCopyEmittedColors = device.createComputePipeline({label: 'copyEmittedColors', layout: physPL, compute: { module: physMod, entryPoint: 'copyEmittedColors' } });
+const pipeClearStats = device.createComputePipeline({label:'clearStats',layout:physPL,compute:{module:physMod,entryPoint:'clearStats'}});
+const pipeComputeStats = device.createComputePipeline({label:'computeStats',layout:physPL,compute:{module:physMod,entryPoint:'computeStats'}});
+const pipeReduceStats = device.createComputePipeline({label:'reduceStats',layout:physPL,compute:{module:physMod,entryPoint:'reduceStats'}});
+const pipeBeginViscosity = device.createComputePipeline({label: 'beginViscosity', layout: physPL, compute: { module: physMod, entryPoint: 'beginViscosity' } });
+const pipeViscosityA = device.createComputePipeline({label: 'viscosityA', layout: physPL, compute: { module: physMod, entryPoint: 'viscosityA' } });
+const pipeViscosityB = device.createComputePipeline({label: 'viscosityB', layout: physPL, compute: { module: physMod, entryPoint: 'viscosityB' } });
+const pipeApplyViscosity = device.createComputePipeline({label: 'applyViscosity', layout: physPL, compute: { module: physMod, entryPoint: 'applyViscosity' } });
 
 const splatBGL = device.createBindGroupLayout({
   entries: [
     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
-    { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
     { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
     { binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
@@ -213,7 +242,7 @@ const linearSamp = device.createSampler({
 
 /* ---------- accum target ---------- */
 let accumTex = null, accumView = null, compBG = null;
-let canvasW = WORLD_WIDTH, canvasH = WORLD_HEIGHT, dpr = 1;
+let canvasW = WORLD_WIDTH, canvasH = WORLD_HEIGHT, dpr = 1, fieldWidth = 1, fieldHeight = 1, renderScale = 1;
 
 function makeAccum(w, h) {
   if (accumTex) accumTex.destroy();
@@ -222,6 +251,7 @@ function makeAccum(w, h) {
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
   });
   accumView = accumTex.createView();
+  fieldWidth = w; fieldHeight = h;
   compBG = device.createBindGroup({
     layout: compBGL,
     entries: [
@@ -245,17 +275,29 @@ function resize() {
   canvas.width = pw; canvas.height = ph;
   canvas.style.width = side + 'px'; canvas.style.height = side + 'px';
   canvasW = WORLD_WIDTH; canvasH = WORLD_HEIGHT;
-  makeAccum(pw, ph);
+  makeAccum(Math.max(1, Math.round(pw * renderScale)), Math.max(1, Math.round(ph * renderScale)));
 }
 window.addEventListener('resize', resize);
 resize();
+const validationError = await device.popErrorScope();
+if (validationError) throw new Error(`GPU pipeline validation failed: ${validationError.message}`);
 
 return {
+  get lostReason() { return lostReason; },
   device, ctx, particleBuf, paramsBuf, renderBuf, colorBuffers, physBGs,
   previousPositionsBuf, gpuTimer,
-  pipeClearGrid, pipeBuildGrid, pipeDensity, pipeColors, pipeLambdas, pipeCorrections, pipeApplyCorrections,
-  pipeForces, pipeIntegrate, pipeSavePrevious,
+  pipeClearGrid, pipeCountGrid, pipeScanCells, pipeScanBlocks, pipeScatterGrid, pipeDensity, pipeDensityLambda, pipeDensityColors, pipeCorrections, pipeApplyCorrections, pipeForces, pipeIntegrate, pipeSavePrevious, pipeUpdateMasses, pipeClearEmission, pipeEmit, pipeCopyEmittedColors, pipeBeginViscosity, pipeViscosityA, pipeViscosityB, pipeApplyViscosity,
+  cellCountsBuf, cellOffsetsBuf, sortedIdsBuf, emissionBuf, emissionReadback, statsReadback,
+  pipeClearStats, pipeComputeStats, pipeReduceStats,
+  pipeLambdasReference, pipeColorsReference,
+  pipeClearLinkedGrid, pipeBuildLinkedGrid,
   splatPipe, splatBGs, compPipe,
+  setRenderScale(value) {
+    const next = Math.max(0.5, Math.min(1, value));
+    if (next !== renderScale) { renderScale = next; resize(); }
+  },
+  get fieldWidth() { return fieldWidth; },
+  get fieldHeight() { return fieldHeight; },
   get compBG() { return compBG; },
   get accumView() { return accumView; },
   get canvasW() { return canvasW; },
