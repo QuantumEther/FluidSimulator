@@ -1,6 +1,6 @@
-import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-performance-v5';
+import { MAX_PART, MAX_GRID_CELLS, STRIDE, ACCUM, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-smooth-flow-v7';
 
-const SHADER_SET_VERSION = 'si-performance-v5';
+const SHADER_SET_VERSION = 'si-smooth-flow-v7';
 
 export async function createGpuRuntime({ canvas, wrap, $ }) {
 /* ---------- WebGPU ---------- */

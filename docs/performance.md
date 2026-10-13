@@ -17,7 +17,7 @@ Implemented on October 13, 2026 against `0a1a556` (the tree audited at `4286048`
 
 ## Work counts
 
-Default Water: four subdivisions, three projection iterations, nonzero dye, one physics tick. Counts exclude optional emission, mass edits, diagnostic samples and rendering.
+Water reference: four subdivisions, three projection iterations, nonzero dye, one physics tick. Counts exclude optional emission, mass edits, diagnostic samples and rendering. The later Smooth flow startup preset uses eight subdivisions and four iterations, or 80 steady-state neighbor sweeps; its 0.30× speed deliberately reduces simulated time per wall-clock second.
 
 | Work | Original SI | Optimized linked grid | Optimized contiguous grid |
 | --- | ---: | ---: | ---: |
@@ -39,6 +39,12 @@ A short 1,000-particle software benchmark used identical initial lattices and co
 An earlier forced-contiguous experiment at the same small count spent about 261–281 ms in optimized compute; it motivated retaining the simpler grid for small scenes. Hardware can have a very different crossover. The benchmark tool records adapter/browser identity and enables explicit grid comparisons.
 
 ## Remaining work and limits
+
+The renderer smooths the accumulated field with a bilinear approximation of a 5×5 Gaussian filter, derives normals from that field, and adds bounded screen-space refraction, Beer–Lambert style color absorption, dielectric Fresnel reflection, and two soft studio panels. It changes only the composite shader and its visual background; it does not change simulation forces or surface geometry. This stylized 2D approach has no depth buffer or full 3D refraction. Reconstruction uses nine texture samples per pixel instead of five, so its effect on render time should be measured on a hardware adapter.
+
+The screenshot-based Smooth flow preset passed native UI/slider checks and a 34,000-particle GPU Fill plus one physics tick, with finite state and maximum speed 0.245 m/s on Vulkan SwiftShader. CPU suites and the existing GPU regressions also passed after changing the startup preset. This is a smoke check, not a long-run stability result.
+
+A separate controlled probe used a zero-velocity, jittered 11×11 particle patch, zero gravity and 30 completed physics ticks (0.5 simulated seconds). Maximum speeds were 0.858 m/s for Water, 0.060 m/s for Water with surface tension disabled, and 0.120 m/s for Smooth flow. All states remained finite. This implicates surface-force activity in Water's excess motion in that small test; it does not reproduce the reported full-tank explosion or establish a calibrated force law. Water's parameters and the solver equations remain unchanged by the preset addition.
 
 This is a faster development baseline, not completion of the audit's scientific calibration program. Solid-wall density support, a discretely consistent surface-tension law, viscosity convergence/constitutive calibration, conservative calibrated dye diffusion, calibrated pressure diagnostics, and broad physical acceptance scenes remain. The surface classifier suppresses weak bulk noise but does not fix the omitted Laplacian self term or the derivative stencil's consistency. The reference-lattice viscosity switch is not a stability bound for arbitrary arrangements, and eight Jacobi iterations can under-converge for strong viscosity. Maximum speed/compression and cap rates expose failures; they do not prove stability by themselves.
 
