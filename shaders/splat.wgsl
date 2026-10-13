@@ -1,4 +1,4 @@
-// Fluid shader set: si-performance-v5
+// Fluid shader set: si-smooth-flow-v6
 
 struct Particle {
   pos          : vec2<f32>,

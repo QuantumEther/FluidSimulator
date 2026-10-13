@@ -1,4 +1,4 @@
-import { SLIDERS, random01, randomVibrant } from './config.js?v=si-performance-v5';
+import { SLIDERS, random01, randomVibrant, PRESETS, DEFAULT_PRESET_ID } from './config.js?v=si-smooth-flow-v6';
 import { REFERENCE_LIMIT } from './emission.mjs';
 
 export function setupInput({ canvas, getCanvasSize, spawn, S }) {
@@ -115,39 +115,10 @@ debugView.addEventListener('change', () => {
   updateModeStatus();
 });
 
-const presets = {
-  screenshot: {
-    budget:8000, timeScale:1, substeps:4, solverIterations:2, gravity:9.81, viscosity:0.25,
-    surfaceTension:0.072, restDensity:1000, spacing:0.002, restitution:0.15,
-    wallRetention:0.94, splatRadius:0.006, densityThreshold:0.72, normalStrength:300, specular:2.8,
-    fresnel:0.5, subsurface:0.35, diffusivity:1e-8, neighborMode:1, debugView:0,
-  },
-  water: {
-    budget:8000, timeScale:1, substeps:4, solverIterations:3, gravity:9.81, viscosity:0.001,
-    surfaceTension:0.072, restDensity:1000, spacing:0.002, restitution:0.02,
-    wallRetention:0.99, splatRadius:0.006, densityThreshold:0.55,
-    normalStrength:150, specular:1.4, fresnel:0.6, subsurface:0.65, diffusivity:1e-9,
-    neighborMode:1, debugView:0,
-  },
-  honey: {
-    budget:8000, timeScale:1, substeps:4, solverIterations:3, gravity:9.81, viscosity:2.0,
-    surfaceTension:0.05, restDensity:1400, spacing:0.002, restitution:0.01,
-    wallRetention:0.995, splatRadius:0.007, densityThreshold:0.55,
-    normalStrength:150, specular:1.2, fresnel:0.4, subsurface:0.9, diffusivity:1e-10,
-    neighborMode:1, debugView:0,
-  },
-  lowGravity: {
-    budget:8000, timeScale:1, substeps:4, solverIterations:2, gravity:1.62, viscosity:0.001,
-    surfaceTension:0.072, restDensity:1000, spacing:0.002, restitution:0.02,
-    wallRetention:0.99, splatRadius:0.006, densityThreshold:0.55,
-    normalStrength:150, specular:1.4, fresnel:0.6, subsurface:0.65, diffusivity:1e-9,
-    neighborMode:1, debugView:0,
-  },
-};
-presetSelect.value = 'water';
+presetSelect.value = DEFAULT_PRESET_ID;
 updateModeStatus();
 presetSelect.addEventListener('change', () => {
-  const preset = presets[presetSelect.value];
+  const preset = PRESETS[presetSelect.value];
   if (!preset) return;
   Object.assign(S, preset);
   refreshParticleMasses();

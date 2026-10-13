@@ -1,4 +1,4 @@
-// Fluid shader set: si-performance-v5
+// Fluid shader set: si-smooth-flow-v6
 // Planar SPH kernel with per-depth particle mass (kg/m), returning volumetric density (kg/m³).
 
 struct Particle {

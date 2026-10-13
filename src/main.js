@@ -2,9 +2,9 @@
 /* ============================================================================
    WebGPU Fluid Lab — realism upgrade
    ============================================================================ */
-import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-performance-v5';
-import { createGpuRuntime } from './gpu.js?v=si-performance-v5';
-import { setupInput, setupControls } from './ui.js?v=si-performance-v5';
+import { MAX_PART, STRIDE, S, SIM_SEED, random01, randomVibrant, WORLD_WIDTH, WORLD_HEIGHT } from './config.js?v=si-smooth-flow-v6';
+import { createGpuRuntime } from './gpu.js?v=si-smooth-flow-v6';
+import { setupInput, setupControls } from './ui.js?v=si-smooth-flow-v6';
 import { advanceFixedClock, FIXED_DT } from './fixed-step.mjs';
 import { particleMassKg, particleMassPerDepth } from './si-units.mjs';
 import { particleCapacity, emissionPatch, REFERENCE_LIMIT } from './emission.mjs';
@@ -362,6 +362,7 @@ if (new URLSearchParams(location.search).has('benchmark')) {
       if (emissionPending) await gpu.device.queue.onSubmittedWorkDone();
       while (emissionPending) await new Promise(resolve => setTimeout(resolve, 0));
       resetParticles();
+      appliedSpacing = S.spacing;
       live = Math.min(positions.length, capacity());
       const data = new Float32Array(live * STRIDE), integers = new Uint32Array(data.buffer);
       const dye = new Float32Array(live * 4), previous = new Float32Array(live * 2);
